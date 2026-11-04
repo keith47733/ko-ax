@@ -24,6 +24,7 @@ CREATE TABLE IF NOT EXISTS public.media (
   release_date DATE,
   next_air_date DATE,
   next_episode_label TEXT,
+  overview TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
