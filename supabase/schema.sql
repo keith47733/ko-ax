@@ -1,5 +1,5 @@
 -- ============================================================================
--- KO-AX SUPABASE DATABASE SCHEMA (Deliverable 1)
+-- KURA SUPABASE DATABASE SCHEMA (Deliverable 1)
 -- Minimalist Media Tracking Web App
 -- ============================================================================
 

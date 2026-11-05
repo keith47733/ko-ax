@@ -2,11 +2,7 @@ import React, { Suspense } from "react";
 import { connection } from "next/server";
 import { getTrackedMediaAction } from "@/app/actions/media";
 import MainViewingPane from "@/components/MainViewingPane";
-import { LocalViewMode } from "@/lib/types";
-
-interface HomePageProps {
-  searchParams: Promise<{ view?: string }>;
-}
+import { HomePageProps, LocalViewMode } from "@/types";
 
 const VALID_VIEWS = new Set<LocalViewMode>([
   "library",
@@ -43,8 +39,8 @@ export default function HomePage({ searchParams }: HomePageProps) {
   return (
     <Suspense
       fallback={
-        <div className="border border-stone-300 rounded-md bg-stone-50 p-6 text-xs uppercase font-mono text-stone-600 shadow-sm">
-          LOADING KO-AX MAIN VIEWING PANE...
+        <div className="rounded-2xl bg-white p-6 text-xs uppercase font-mono text-zinc-500 shadow-[0_8px_30px_rgb(0,0,0,0.04)]">
+          LOADING KURA MAIN VIEWING PANE...
         </div>
       }
     >

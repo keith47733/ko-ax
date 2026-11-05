@@ -3,17 +3,9 @@
 import { revalidatePath } from "next/cache";
 import { cookies } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
+import { AuthActionResult } from "@/types";
 
-export interface AuthActionResult {
-  success?: boolean;
-  error?: string;
-  message?: string;
-  emailConfirmationRequired?: boolean;
-  user?: {
-    email: string;
-    id: string;
-  } | null;
-}
+export type { AuthActionResult };
 
 interface SessionCookieOptions {
   httpOnly: boolean;

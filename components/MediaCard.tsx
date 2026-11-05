@@ -4,28 +4,10 @@ import React, { useEffect, useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { upsertUserMediaAction } from "@/app/actions/media";
-import {
-  BookmarkIcon,
-  CheckCircleIcon,
-  CompassIcon,
-  EyeIcon,
-} from "@/components/Icons";
-import {
-  MediaStatus,
-  MergedMediaItem,
-  getDecadeFromDate,
-} from "@/lib/types";
-
-export interface MediaCardProps {
-  media: MergedMediaItem;
-  onStateChange?: (updated: MergedMediaItem) => void;
-}
-
-const STATUS_OPTIONS: Array<{ value: MediaStatus; label: string }> = [
-  { value: "want_to_watch", label: "WANT" },
-  { value: "watching", label: "WATCHING" },
-  { value: "watched", label: "WATCHED" },
-];
+import { CompassIcon } from "@/components/Icons";
+import { StatusPopupButton } from "@/components/StatusToggle";
+import { MediaCardProps, MediaStatus, MergedMediaItem } from "@/types";
+import { formatYear, getDecadeFromDate } from "@/lib/utils";
 
 export default function MediaCard({
   media,
@@ -35,10 +17,10 @@ export default function MediaCard({
   const [status, setStatus] = useState<MediaStatus | null>(media.status);
   const [rating, setRating] = useState<number | null>(media.rating);
   const [hoverRating, setHoverRating] = useState<number | null>(null);
-  const [isPopoverOpen, setIsPopoverOpen] = useState(false);
+  const [isRatingOpen, setIsRatingOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
 
-  const popoverRef = useRef<HTMLDivElement>(null);
+  const ratingRef = useRef<HTMLDivElement>(null);
 
   // Sync state if incoming props change
   const [prevMediaKey, setPrevMediaKey] = useState(
@@ -51,22 +33,19 @@ export default function MediaCard({
     setRating(media.rating);
   }
 
-  // Close popover when clicking outside or pressing Escape
+  // Close rating popover when clicking outside or pressing Escape
   useEffect(() => {
     function handlePointerDown(e: MouseEvent) {
-      if (
-        popoverRef.current &&
-        !popoverRef.current.contains(e.target as Node)
-      ) {
-        setIsPopoverOpen(false);
+      if (ratingRef.current && !ratingRef.current.contains(e.target as Node)) {
+        setIsRatingOpen(false);
       }
     }
     function handleKeyDown(e: KeyboardEvent) {
       if (e.key === "Escape") {
-        setIsPopoverOpen(false);
+        setIsRatingOpen(false);
       }
     }
-    if (isPopoverOpen) {
+    if (isRatingOpen) {
       window.addEventListener("mousedown", handlePointerDown);
       window.addEventListener("keydown", handleKeyDown);
     }
@@ -74,7 +53,7 @@ export default function MediaCard({
       window.removeEventListener("mousedown", handlePointerDown);
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [isPopoverOpen]);
+  }, [isRatingOpen]);
 
   function mutateUserMedia(
     nextStatus: MediaStatus | null,
@@ -120,271 +99,236 @@ export default function MediaCard({
     });
   }
 
-  function handleStatusChange(clickedStatus: MediaStatus) {
+  function handleStatusSelect(clickedStatus: MediaStatus) {
     const nextStatus: MediaStatus | null =
       status === clickedStatus ? null : clickedStatus;
     const nextRating = nextStatus === null ? null : rating;
     mutateUserMedia(nextStatus, nextRating);
   }
 
-  function handleRatingClick(starValue: number) {
-    if (rating === starValue) return;
+  function handleRatingSelect(starValue: number) {
     const effectiveStatus: MediaStatus =
       status === "watching" ? "watching" : "watched";
     mutateUserMedia(effectiveStatus, starValue);
+    setIsRatingOpen(false);
+    setHoverRating(null);
   }
 
-  function handleClearRating() {
-    if (rating === null) return;
+  function handleRatingClear() {
     mutateUserMedia(status, null);
+    setIsRatingOpen(false);
+    setHoverRating(null);
   }
 
   function handlePosterClick() {
-    router.push(`/media/${media.tmdb_id}`);
+    router.push(`/media/${media.tmdb_id}?type=${media.media_type}`);
   }
 
-  function handleTogglePopover(e: React.MouseEvent) {
+  function handleToggleRating(e: React.MouseEvent) {
     e.stopPropagation();
-    setIsPopoverOpen((prev) => !prev);
+    setIsRatingOpen((prev) => !prev);
   }
 
-  const year =
-    (media.release_date || media.next_air_date || "").slice(0, 4) || "—";
-
-  // Status button styling & icon
-  let StatusIcon = BookmarkIcon;
-  let statusButtonClasses =
-    "bg-stone-50/90 text-stone-500 hover:text-stone-900 hover:bg-stone-100 border border-stone-300";
-
-  if (status === "want_to_watch") {
-    StatusIcon = BookmarkIcon;
-    statusButtonClasses =
-      "bg-orange-700 text-white border-transparent shadow-sm";
-  } else if (status === "watching") {
-    StatusIcon = EyeIcon;
-    statusButtonClasses =
-      "bg-stone-800 text-white border-transparent shadow-sm";
-  } else if (status === "watched") {
-    StatusIcon = CheckCircleIcon;
-    statusButtonClasses =
-      "bg-emerald-800 text-white border-transparent shadow-sm";
-  }
+  const year = formatYear(media.release_date || media.next_air_date);
 
   return (
     <article
       data-testid={`media-card-${media.tmdb_id}`}
       onClick={handlePosterClick}
       title={`${media.title} (${year}) • Click to view details`}
-      className="bg-stone-50 border border-stone-300 rounded-md shadow-sm hover:shadow-md shadow-stone-800/5 transition-all overflow-visible flex flex-col relative group cursor-pointer select-none"
+      className="bg-white rounded-2xl border border-zinc-400/90 shadow-[0_10px_30px_rgb(0,0,0,0.06)] hover:shadow-[0_16px_40px_rgb(0,0,0,0.12)] hover:-translate-y-0.5 transition-all duration-200 overflow-visible flex flex-col relative group cursor-pointer select-none"
     >
       {/* =====================================================================
-          1. IMAGE CONTAINER (Aspect 2/3, Press-glass boundary)
+          1. IMAGE CONTAINER (Aspect 2/3, Soft rounded top)
           ===================================================================== */}
-      <div className="relative w-full aspect-2/3 bg-stone-200 border-b border-stone-200 rounded-t-md overflow-hidden">
+      <div className="relative w-full aspect-2/3 bg-zinc-200 rounded-t-[15px] overflow-hidden">
         {media.poster_path ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
             src={`https://image.tmdb.org/t/p/w500${media.poster_path}`}
             alt={`${media.title} poster`}
-            className="w-full h-full object-cover group-hover:scale-103 transition-transform duration-200"
+            className="w-full h-full object-cover brightness-[0.88] saturate-[0.95] group-hover:brightness-100 group-hover:saturate-100 group-hover:scale-104 transition-all duration-300"
             loading="lazy"
           />
         ) : (
-          <div className="w-full h-full p-6 flex flex-col justify-center items-center text-center bg-stone-100">
-            <span className="font-serif text-sm sm:text-base text-stone-800 leading-tight font-semibold">
+          <div className="w-full h-full p-6 flex flex-col justify-center items-center text-center bg-[#F4F3F0]">
+            <span className="font-sans text-base sm:text-lg text-zinc-950 leading-tight font-bold">
               {media.title}
             </span>
-            <span className="text-[10px] font-mono text-stone-400 mt-2 uppercase tracking-wider">
+            <span className="text-xs font-mono text-zinc-600 mt-2 uppercase tracking-wider font-bold">
               NO POSTER
             </span>
           </div>
         )}
 
-        {/* Floating Vintage Year Badge (Blueprint 5.1) */}
-        <div className="absolute top-2 left-2 px-2 py-1 bg-white/90 backdrop-blur-sm border border-stone-300 rounded text-[10px] font-mono font-bold text-stone-800 pointer-events-none shadow-sm">
+        {/* Floating High-Contrast Year Badge (Standardized w-16 h-7.5) */}
+        <div className="absolute top-2.5 left-2.5 min-w-16 h-7.5 px-2.5 bg-white/95 backdrop-blur-md rounded-lg text-xs sm:text-sm font-mono font-black text-zinc-950 flex items-center justify-center pointer-events-none shadow-md ring-2 ring-white/90 leading-none">
           {year}
         </div>
 
         {/* Status Toggle Button & Rating Badge (Top Right HUD) */}
-        <div className="absolute top-2 right-2 z-20 flex flex-col items-end gap-1.5">
-          <button
-            type="button"
-            onClick={handleTogglePopover}
-            title={`Status: ${status || "Untracked"} • Click to modify`}
-            className={`h-8 w-8 sm:h-8.5 sm:w-8.5 rounded-md flex items-center justify-center cursor-pointer backdrop-blur-sm transition-all ${statusButtonClasses}`}
-          >
-            <StatusIcon className="w-4 h-4 sm:w-4.5 sm:h-4.5 shrink-0" />
-          </button>
+        <div className="absolute top-2.5 right-2.5 z-20 flex flex-col items-end gap-1.5">
+          <StatusPopupButton
+            status={status}
+            mediaType={media.media_type}
+            onSelect={handleStatusSelect}
+            disabled={isPending}
+          />
 
-          {rating !== null && (
+          {rating !== null ? (
             <button
               type="button"
-              onClick={handleTogglePopover}
-              title={`Your rating: ${rating}/10 • Click to edit`}
-              className="bg-white/90 text-stone-800 border border-stone-300 rounded text-[10px] font-mono font-bold px-1.5 py-0.5 flex items-center gap-1 shadow-sm backdrop-blur-sm cursor-pointer"
+              onClick={handleToggleRating}
+              title={`Your rating: ${Number(rating).toFixed(1)}/10 • Click to edit`}
+              className="min-w-16 h-7.5 px-2 bg-white/95 hover:bg-white text-zinc-950 rounded-lg text-xs sm:text-sm font-mono font-black flex items-center justify-center gap-1 shadow-md ring-2 ring-white/90 backdrop-blur-md cursor-pointer hover:scale-105 transition-all shrink-0 leading-none"
             >
-              <span className="text-amber-600 text-xs leading-none">★</span>
-              <span>{rating}</span>
+              <span className="text-amber-500 text-xs sm:text-sm leading-none shrink-0">★</span>
+              <span className="leading-none">{Number(rating).toFixed(1)}</span>
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={handleToggleRating}
+              title="Not rated yet • Click to rate"
+              className="min-w-16 h-7.5 px-2 bg-white/90 hover:bg-white text-zinc-600 hover:text-zinc-950 rounded-lg text-[11px] sm:text-xs font-mono font-extrabold flex items-center justify-center gap-1 shadow-md ring-2 ring-white/90 backdrop-blur-md cursor-pointer hover:scale-105 transition-all shrink-0 leading-none"
+            >
+              <span className="text-zinc-400 text-xs leading-none shrink-0">★</span>
+              <span className="leading-none">RATE</span>
             </button>
           )}
         </div>
 
-        {/* Find Similar Titles Discovery Link (Bottom Right HUD) */}
-        <div className="absolute bottom-2 right-2 z-20">
+        {/* Find Similar Titles Discovery Link (Bottom Right HUD - Shrunk 50% to w-8.5 h-8.5 in Soft Slate Charcoal) */}
+        <div className="absolute bottom-2.5 right-2.5 z-20">
           <Link
             href={`/discover?type=${media.media_type}&seed=${media.tmdb_id}&decade=${getDecadeFromDate(media.release_date || media.next_air_date)}`}
             onClick={(e) => e.stopPropagation()}
             title={`Find titles similar to ${media.title}`}
-            className="h-7 w-7 sm:h-8 sm:w-8 rounded-md border border-stone-300 bg-white/90 hover:bg-stone-100 text-stone-600 hover:text-stone-900 flex items-center justify-center backdrop-blur-sm shadow-sm transition-all cursor-pointer"
+            className="w-8.5 h-8.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-white flex items-center justify-center backdrop-blur-md shadow-md ring-2 ring-white/90 transition-all cursor-pointer shrink-0"
           >
-            <CompassIcon className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
+            <CompassIcon className="w-4.5 h-4.5 shrink-0" />
           </Link>
         </div>
       </div>
 
       {/* =====================================================================
-          2. CONTENT STRIP (Blueprint 5.1: Serifs for Title, Mono for Meta)
+          2. CONTENT STRIP (Tightened Padding, Clear Typographic Hierarchy)
           ===================================================================== */}
-      <div className="p-4 flex flex-col gap-1">
-        <h3 className="font-serif text-lg font-semibold text-stone-900 leading-tight truncate">
+      <div className="px-4 pb-4 pt-2 sm:pt-2.5 flex flex-col gap-1">
+        <h3 className="font-sans text-base sm:text-lg font-bold text-zinc-950 leading-snug truncate">
           {media.title}
         </h3>
-        <span className="font-mono text-xs text-stone-500 uppercase tracking-wider">
-          {media.media_type === "tv" ? "TV SHOW" : "MOVIE"} • {media.tmdb_rating !== undefined && media.tmdb_rating !== null ? `${media.tmdb_rating.toFixed(1)} TMDB` : "UNRATED"}
+        <span className="font-mono text-xs text-zinc-500 font-medium uppercase tracking-wider flex items-center gap-1.5">
+          <span>{media.media_type === "tv" ? "TV SHOW" : "MOVIE"}</span>
+          <span className="text-zinc-300">•</span>
+          <span>
+            {media.tmdb_rating !== undefined && media.tmdb_rating !== null ? `★ ${media.tmdb_rating.toFixed(1)} TMDB` : "UNRATED"}
+          </span>
         </span>
       </div>
 
       {/* =====================================================================
-          3. INTERACTIVE POPOVER: Modern Apothecary State & Rating Picker
+          3. INDEPENDENT RATING POP-UP
           ===================================================================== */}
-      {isPopoverOpen && (
-        <div
-          ref={popoverRef}
-          onClick={(e) => e.stopPropagation()}
-          className="absolute top-12 right-2 z-30 w-64 sm:w-72 border border-stone-300 rounded-md bg-stone-50 p-3.5 shadow-md shadow-stone-800/10 text-stone-900 select-text space-y-3"
-        >
-          {/* Popover Header */}
-          <div className="flex items-center justify-between border-b border-stone-200 pb-2">
-            <span className="font-serif text-xs font-semibold text-stone-800 truncate">
-              {media.title}
-            </span>
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                setIsPopoverOpen(false);
-              }}
-              className="text-xs font-mono text-stone-400 hover:text-stone-700 cursor-pointer px-1"
-            >
-              ✕
-            </button>
-          </div>
-
-          {/* Watch Status Selector Chips (Styleguide 4) */}
-          <div className="grid grid-cols-3 gap-1.5 w-full">
-            {STATUS_OPTIONS.map((option) => {
-              const isActive = status === option.value;
-              const isOptionDisabled =
-                media.media_type === "movie" && option.value === "watching";
-
-              let chipStyle =
-                "bg-stone-50 text-stone-600 border border-stone-300 hover:bg-stone-100 rounded-md transition-colors";
-
-              if (isOptionDisabled) {
-                chipStyle =
-                  "bg-stone-100 text-stone-400 line-through cursor-not-allowed border border-stone-200 rounded-md opacity-50";
-              } else if (isActive) {
-                if (option.value === "want_to_watch") {
-                  chipStyle =
-                    "bg-orange-700 text-white border-transparent font-medium rounded-md shadow-sm";
-                } else if (option.value === "watching") {
-                  chipStyle =
-                    "bg-stone-800 text-white border-transparent font-medium rounded-md shadow-sm";
-                } else if (option.value === "watched") {
-                  chipStyle =
-                    "bg-emerald-800 text-white border-transparent font-medium rounded-md shadow-sm";
-                }
-              }
-
-              return (
+      {isRatingOpen && (
+        <>
+          <div
+            className="fixed inset-0 z-25 cursor-default bg-transparent"
+            onClick={(e) => {
+              e.stopPropagation();
+              e.preventDefault();
+              setIsRatingOpen(false);
+            }}
+          />
+          <div
+            ref={ratingRef}
+            onClick={(e) => e.stopPropagation()}
+            className="absolute top-24 right-2 z-30 w-72 sm:w-80 rounded-2xl bg-white p-3 shadow-2xl ring-2 ring-black/10 text-zinc-950 select-text space-y-2"
+          >
+            {/* Header with RATE (1-10) on left, CLEAR & X on right */}
+            <div className="flex items-center justify-between border-b border-zinc-200 pb-1.5 w-full">
+              <span className="font-mono text-xs font-bold uppercase tracking-wider text-zinc-800">
+                RATE (1-10)
+              </span>
+              <div className="flex items-center gap-1.5">
                 <button
-                  key={option.value}
                   type="button"
-                  onClick={() =>
-                    !isOptionDisabled && handleStatusChange(option.value)
-                  }
-                  disabled={isPending || isOptionDisabled}
-                  className={`h-8 px-1 text-xs font-medium uppercase flex items-center justify-center truncate cursor-pointer transition-colors ${chipStyle}`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleRatingClear();
+                  }}
+                  disabled={isPending || rating === null}
+                  className={`px-2 py-0.5 text-[11px] font-mono font-bold rounded-md transition-colors ${
+                    rating !== null
+                      ? "text-rose-600 hover:text-rose-700 bg-rose-50 hover:bg-rose-100 cursor-pointer"
+                      : "text-zinc-300 bg-[#F4F3F0] cursor-not-allowed select-none"
+                  }`}
+                  title="Clear rating"
                 >
-                  {option.label}
+                  CLEAR
                 </button>
-              );
-            })}
-          </div>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setIsRatingOpen(false);
+                  }}
+                  className="text-sm font-mono font-bold text-zinc-400 hover:text-zinc-950 cursor-pointer leading-none p-0"
+                  title="Close without changing"
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
 
-          {/* 10-Star Rating Picker */}
-          <div className="space-y-1.5 pt-1.5 border-t border-stone-200">
-            <span className="block text-[10px] font-mono font-medium uppercase text-stone-500">
-              RATE (1 TO 10):
-            </span>
+            {/* 10-Star Interactive Rating Picker */}
             <div
-              className="flex items-center justify-between gap-1 w-full"
+              className="flex items-center justify-between w-full"
               onMouseLeave={() => setHoverRating(null)}
             >
-              <div className="flex items-center justify-between flex-1 min-w-0 pr-1">
-                {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((starVal) => {
-                  const isHovering = hoverRating !== null;
-                  const isFilledHover = isHovering && starVal <= hoverRating;
-                  const isFilledSaved =
-                    !isHovering && rating !== null && starVal <= rating;
+              {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((starVal, idx) => {
+                const isHovering = hoverRating !== null;
+                const isFilledHover = isHovering && starVal <= hoverRating;
+                const isFilledSaved =
+                  !isHovering && rating !== null && starVal <= rating;
 
-                  const starClass = isFilledSaved
-                    ? "fill-stone-900 stroke-stone-900"
-                    : isFilledHover
-                    ? "fill-stone-400 stroke-stone-800 stroke-[1.5]"
-                    : "fill-none stroke-stone-400 stroke-[1.5]";
+                const starClass = isFilledSaved
+                  ? "fill-amber-500 stroke-amber-600"
+                  : isFilledHover
+                  ? "fill-amber-300 stroke-amber-500"
+                  : "fill-zinc-200 stroke-zinc-400 stroke-[1.4]";
 
-                  return (
-                    <button
-                      key={starVal}
-                      type="button"
-                      onClick={() => {
-                        handleRatingClick(starVal);
-                        setHoverRating(null);
-                      }}
-                      onMouseEnter={() => setHoverRating(starVal)}
-                      disabled={isPending}
-                      className="p-0.5 cursor-pointer text-stone-800 hover:scale-120 transition-transform flex items-center justify-center"
+                const paddingClass =
+                  idx === 0
+                    ? "pl-0 pr-0.5 py-0.5"
+                    : idx === 9
+                    ? "pr-0 pl-0.5 py-0.5"
+                    : "px-0.5 py-0.5";
+
+                return (
+                  <button
+                    key={starVal}
+                    type="button"
+                    onClick={() => handleRatingSelect(starVal)}
+                    onMouseEnter={() => setHoverRating(starVal)}
+                    disabled={isPending}
+                    className={`cursor-pointer text-zinc-900 hover:scale-125 transition-transform flex items-center justify-center shrink-0 ${paddingClass}`}
+                    title={`Rate ${starVal} / 10`}
+                  >
+                    <svg
+                      className={`w-4.5 h-4.5 transition-colors ${starClass}`}
+                      viewBox="0 0 24 24"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
                     >
-                      <svg
-                        className={`w-4 h-4 transition-colors ${starClass}`}
-                        viewBox="0 0 24 24"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      >
-                        <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
-                      </svg>
-                    </button>
-                  );
-                })}
-              </div>
-
-              <button
-                type="button"
-                onClick={handleClearRating}
-                disabled={isPending || rating === null}
-                className={`px-1.5 py-0.5 text-xs font-mono shrink-0 ${
-                  rating !== null
-                    ? "text-stone-500 hover:text-stone-900 cursor-pointer"
-                    : "text-stone-300 cursor-not-allowed select-none"
-                }`}
-                title="Clear rating"
-              >
-                ✕
-              </button>
+                      <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+                    </svg>
+                  </button>
+                );
+              })}
             </div>
           </div>
-        </div>
+        </>
       )}
     </article>
   );

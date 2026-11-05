@@ -5,23 +5,25 @@ import Link from "next/link";
 import MediaCard from "@/components/MediaCard";
 import ReleaseCalendar from "@/components/ReleaseCalendar";
 import {
+  FilterSearchInput,
+  FilterSection,
+  FilterSidebar,
+  FilterSidebarHeader,
+  SegmentedControl,
+} from "@/components/FilterSidebar";
+import {
+  LocalViewMode,
   MEDIA_GRID_CLASS,
+  MainViewingPaneProps,
   MediaType,
   MergedMediaItem,
-  LocalViewMode,
-} from "@/lib/types";
-
-interface MainViewingPaneProps {
-  initialItems: MergedMediaItem[];
-  activeView: LocalViewMode;
-  dataSource?: "supabase" | "wireframe-store";
-}
+} from "@/types";
 
 const VIEW_LABELS: Record<LocalViewMode, string> = {
   library: "ALL MEDIA LIBRARY",
   want_to_watch: "WANT TO WATCH",
   watching: "CURRENTLY WATCHING",
-  watched: "WATCHED & RATED",
+  watched: "WATCHED",
   calendar: "UPCOMING RELEASES (RADAR)",
 };
 
@@ -128,213 +130,122 @@ export default function MainViewingPane({
     );
   }
 
+  const countBadgeClass =
+    activeView === "want_to_watch"
+      ? "bg-[#FF7A50] text-zinc-950 shadow-sm shadow-orange-500/20"
+      : activeView === "watched"
+      ? "bg-[#34D399] text-emerald-950 shadow-sm shadow-emerald-500/20"
+      : activeView === "watching"
+      ? "bg-[#818CF8] text-indigo-950 shadow-sm shadow-indigo-500/20"
+      : "bg-zinc-200 text-zinc-950";
+
   return (
     <div className="flex flex-col lg:flex-row gap-5 sm:gap-6 items-start w-full">
       {/* =====================================================================
-          LEFT (20%) FRAME: Archival Minimalist Filter Console
+          LEFT (20%) FRAME: Reusable Minimalist Filter Sidebar
           ===================================================================== */}
-      <aside className="w-full lg:w-72 shrink-0 border border-stone-300 rounded-md bg-stone-50 p-4 shadow-sm space-y-4">
+      <FilterSidebar>
         {/* Frame Header with View Title & Count */}
-        <div className="border-b border-stone-200 pb-3 flex items-center justify-between gap-2">
-          <h2 className="font-serif text-sm sm:text-base font-bold text-stone-900 tracking-tight truncate">
-            {VIEW_LABELS[activeView]}
-          </h2>
-          <span
-            className={`text-xs font-mono font-medium px-2 py-0.5 rounded border border-stone-300 shrink-0 ${
-              activeView === "want_to_watch"
-                ? "bg-orange-700 text-white border-transparent"
-                : activeView === "watched"
-                ? "bg-emerald-800 text-white border-transparent"
-                : activeView === "watching"
-                ? "bg-stone-800 text-white border-transparent"
-                : "bg-stone-200 text-stone-700"
-            }`}
-          >
-            [{filteredAndSortedItems.length}]
-          </span>
-        </div>
+        <FilterSidebarHeader
+          title={VIEW_LABELS[activeView]}
+          count={filteredAndSortedItems.length}
+          countBadgeClass={countBadgeClass}
+        />
 
         {/* 1. Title Filter */}
         <div>
-          <input
+          <FilterSearchInput
             id="local-title-filter"
-            type="text"
             value={localTitleFilter}
             onChange={(e) => setLocalTitleFilter(e.target.value)}
             placeholder="TYPE TO FILTER..."
-            className="w-full h-9 border border-stone-300 rounded-md px-2.5 bg-stone-50 text-stone-900 text-xs sm:text-sm font-sans focus:outline-none focus:border-stone-500 placeholder:text-stone-400"
           />
         </div>
 
         {/* 2. Media Type Toggle */}
-        <div className="space-y-1">
-          <span className="block text-[10px] font-mono font-medium uppercase text-stone-500 tracking-wider">
-            MEDIA TYPE
-          </span>
-          <div className="grid grid-cols-3 border border-stone-300 divide-x divide-stone-300 rounded-md overflow-hidden text-xs sm:text-sm font-mono uppercase text-center bg-stone-50 shadow-sm">
-            <button
-              type="button"
-              onClick={() => setMediaTypeFilter("all")}
-              className={`py-2 cursor-pointer transition-colors ${
-                mediaTypeFilter === "all"
-                  ? "bg-stone-800 text-white font-medium"
-                  : "bg-stone-50 text-stone-600 hover:bg-stone-100"
-              }`}
-            >
-              ALL
-            </button>
-            <button
-              type="button"
-              onClick={() => setMediaTypeFilter("movie")}
-              className={`py-2 cursor-pointer transition-colors ${
-                mediaTypeFilter === "movie"
-                  ? "bg-stone-800 text-white font-medium"
-                  : "bg-stone-50 text-stone-600 hover:bg-stone-100"
-              }`}
-            >
-              MOVIES
-            </button>
-            <button
-              type="button"
-              onClick={() => setMediaTypeFilter("tv")}
-              className={`py-2 cursor-pointer transition-colors ${
-                mediaTypeFilter === "tv"
-                  ? "bg-stone-800 text-white font-medium"
-                  : "bg-stone-50 text-stone-600 hover:bg-stone-100"
-              }`}
-            >
-              TV
-            </button>
-          </div>
-        </div>
+        <FilterSection label="MEDIA TYPE">
+          <SegmentedControl
+            value={mediaTypeFilter}
+            onChange={setMediaTypeFilter}
+            options={[
+              { value: "all", label: "ALL" },
+              { value: "movie", label: "MOVIES" },
+              { value: "tv", label: "TV" },
+            ]}
+          />
+        </FilterSection>
 
         {/* 3. Minimum Rating Filter */}
-        <div className="space-y-1">
-          <span className="block text-[10px] font-mono font-medium uppercase text-stone-500 tracking-wider">
-            MINIMUM RATING
-          </span>
-          <div className="grid grid-cols-4 border border-stone-300 divide-x divide-stone-300 rounded-md overflow-hidden text-xs sm:text-sm font-mono uppercase text-center bg-stone-50 shadow-sm">
-            {[0, 7, 8, 9].map((val) => (
-              <button
-                key={val}
-                type="button"
-                onClick={() => setMinRatingFilter(val)}
-                className={`py-2 cursor-pointer transition-colors ${
-                  minRatingFilter === val
-                    ? "bg-stone-800 text-white font-medium"
-                    : "bg-stone-50 text-stone-600 hover:bg-stone-100"
-                }`}
-              >
-                {val === 0 ? "ALL" : `${val}+`}
-              </button>
-            ))}
-          </div>
-        </div>
+        <FilterSection label="MINIMUM RATING">
+          <SegmentedControl
+            value={minRatingFilter}
+            onChange={setMinRatingFilter}
+            columns={4}
+            options={[
+              { value: 0, label: "ALL" },
+              { value: 7, label: "7+" },
+              { value: 8, label: "8+" },
+              { value: 9, label: "9+" },
+            ]}
+          />
+        </FilterSection>
 
         {/* 4. Sort By Field */}
-        <div className="space-y-1">
-          <span className="block text-[10px] font-mono font-medium uppercase text-stone-500 tracking-wider">
-            SORT FIELD
-          </span>
-          <div className="grid grid-cols-3 border border-stone-300 divide-x divide-stone-300 rounded-md overflow-hidden text-xs sm:text-sm font-mono uppercase text-center bg-stone-50 shadow-sm">
-            <button
-              type="button"
-              onClick={() => setSortBy("title")}
-              className={`py-2 cursor-pointer transition-colors ${
-                sortBy === "title"
-                  ? "bg-stone-800 text-white font-medium"
-                  : "bg-stone-50 text-stone-600 hover:bg-stone-100"
-              }`}
-            >
-              TITLE
-            </button>
-            <button
-              type="button"
-              onClick={() => setSortBy("updated_at")}
-              className={`py-2 cursor-pointer transition-colors ${
-                sortBy === "updated_at"
-                  ? "bg-stone-800 text-white font-medium"
-                  : "bg-stone-50 text-stone-600 hover:bg-stone-100"
-              }`}
-            >
-              DATE
-            </button>
-            <button
-              type="button"
-              onClick={() => setSortBy("rating")}
-              className={`py-2 cursor-pointer transition-colors ${
-                sortBy === "rating"
-                  ? "bg-stone-800 text-white font-medium"
-                  : "bg-stone-50 text-stone-600 hover:bg-stone-100"
-              }`}
-            >
-              RATING
-            </button>
-          </div>
-        </div>
+        <FilterSection label="SORT FIELD">
+          <SegmentedControl
+            value={sortBy}
+            onChange={setSortBy}
+            options={[
+              { value: "title", label: "TITLE" },
+              { value: "updated_at", label: "DATE" },
+              { value: "rating", label: "RATING" },
+            ]}
+          />
+        </FilterSection>
 
         {/* 5. Sort Direction */}
-        <div className="space-y-1">
-          <span className="block text-[10px] font-mono font-medium uppercase text-stone-500 tracking-wider">
-            SORT ORDER
-          </span>
-          <div className="grid grid-cols-2 border border-stone-300 divide-x divide-stone-300 rounded-md overflow-hidden text-xs sm:text-sm font-mono uppercase text-center bg-stone-50 shadow-sm">
-            <button
-              type="button"
-              onClick={() => setSortOrder("asc")}
-              className={`py-2 cursor-pointer transition-colors ${
-                sortOrder === "asc"
-                  ? "bg-stone-800 text-white font-medium"
-                  : "bg-stone-50 text-stone-600 hover:bg-stone-100"
-              }`}
-            >
-              ASC ↑ (A-Z)
-            </button>
-            <button
-              type="button"
-              onClick={() => setSortOrder("desc")}
-              className={`py-2 cursor-pointer transition-colors ${
-                sortOrder === "desc"
-                  ? "bg-stone-800 text-white font-medium"
-                  : "bg-stone-50 text-stone-600 hover:bg-stone-100"
-              }`}
-            >
-              DESC ↓ (Z-A)
-            </button>
-          </div>
-        </div>
-      </aside>
+        <FilterSection label="SORT ORDER">
+          <SegmentedControl
+            value={sortOrder}
+            onChange={setSortOrder}
+            options={[
+              { value: "asc", label: "ASC ↑ (A-Z)" },
+              { value: "desc", label: "DESC ↓ (Z-A)" },
+            ]}
+          />
+        </FilterSection>
+      </FilterSidebar>
 
       {/* =====================================================================
           RIGHT (80%) FRAME: Responsive Poster Grid
           ===================================================================== */}
       <div className="flex-1 min-w-0 w-full">
         {items.length === 0 ? (
-          <section className="border border-stone-300 rounded-md bg-stone-50 p-8 sm:p-12 text-center space-y-4 shadow-sm">
-            <div className="font-mono text-xs text-stone-500 uppercase font-medium tracking-widest">
+          <section className="rounded-2xl bg-white p-8 sm:p-12 text-center space-y-4 shadow-[0_8px_30px_rgb(0,0,0,0.04)] ring-1 ring-black/5">
+            <div className="font-mono text-xs text-zinc-700 uppercase font-bold tracking-widest">
               [ TRACKER INITIALIZED • ZERO ENTRIES ]
             </div>
-            <h2 className="font-serif text-2xl sm:text-3xl text-stone-900 font-bold tracking-tight">
+            <h2 className="font-sans text-2xl sm:text-3xl text-zinc-950 font-bold tracking-tight">
               Your Media Library is Empty
             </h2>
-            <p className="max-w-md mx-auto text-xs sm:text-sm font-sans text-stone-600 leading-relaxed">
+            <p className="max-w-md mx-auto text-xs sm:text-sm font-sans text-zinc-700 leading-relaxed font-medium">
               Use the search bar above to start tracking movies and TV shows to build your archive and receive recommendations.
             </p>
             <div className="pt-2 flex justify-center">
               <Link
                 href="/search"
-                className="inline-flex items-center gap-2 px-5 py-2.5 bg-orange-700 hover:bg-orange-800 text-white font-sans text-xs uppercase tracking-wider font-medium rounded-md shadow-sm transition-colors cursor-pointer"
+                className="inline-flex items-center gap-2 px-6 py-3 bg-[#FF7A50] hover:brightness-95 text-zinc-950 font-sans text-xs uppercase tracking-wider font-black rounded-xl shadow-md shadow-orange-500/20 transition-all cursor-pointer active:scale-95"
               >
                 ➔ Search Titles to Track
               </Link>
             </div>
           </section>
         ) : filteredAndSortedItems.length === 0 ? (
-          <section className="border border-stone-300 rounded-md bg-stone-50 p-8 text-center text-xs space-y-2 shadow-sm text-stone-600 font-sans">
-            <div className="font-medium text-stone-800">
+          <section className="rounded-2xl bg-white p-8 text-center text-xs space-y-2 shadow-[0_8px_30px_rgb(0,0,0,0.04)] text-zinc-700 font-sans ring-1 ring-black/5">
+            <div className="font-bold text-zinc-950 text-sm">
               No media matches found in {VIEW_LABELS[activeView]}.
             </div>
-            <div className="text-stone-500">
+            <div className="text-zinc-600 font-medium">
               Adjust or reset your filters on the left to view titles.
             </div>
           </section>

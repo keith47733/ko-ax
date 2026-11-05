@@ -1,21 +1,25 @@
-export default function KoaxLogo({ className = "" }: { className?: string }) {
+export default function Logo({ className = "" }: { className?: string }) {
   return (
-    <svg
-      viewBox="0 0 70 40"
-      className={className}
-      xmlns="http://www.w3.org/2000/svg"
-    >
-      {/* Thinner, longer charcoal wire */}
-      <rect x="0" y="16" width="35" height="8" fill="currentColor" />
-
-      {/* Slimmer hex nut profile */}
-      <polygon
-        points="35,16 39,10 51,10 55,16 55,24 51,30 39,30 35,24"
-        fill="currentColor"
-      />
-
-      {/* Burnt Orange apothecary stinger */}
-      <rect x="55" y="18" width="15" height="4" fill="#c2410c" />
-    </svg>
+    <div className={`flex items-center gap-3 ${className}`}>
+      {/* Minimalist Lens/Reel SVG */}
+      <svg 
+        xmlns="http://www.w3.org/2000/svg" 
+        viewBox="0 0 24 24" 
+        fill="none" 
+        stroke="currentColor" 
+        strokeWidth="2" 
+        strokeLinecap="round" 
+        strokeLinejoin="round" 
+        className="w-7 h-7 text-zinc-900"
+      >
+        <circle cx="10" cy="12" r="8" />
+        <circle cx="17" cy="12" r="4" />
+      </svg>
+      
+      {/* Wordmark */}
+      <span className="font-sans text-xl font-bold tracking-[0.25em] text-zinc-900 mt-1">
+        KURA
+      </span>
+    </div>
   );
 }

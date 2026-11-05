@@ -2,82 +2,22 @@
 
 import React, { useMemo, useState, useEffect, useRef } from "react";
 import MediaCard from "@/components/MediaCard";
-import { MEDIA_GRID_CLASS, MediaType, MergedMediaItem } from "@/lib/types";
-
-interface ReleaseCalendarProps {
-  initialItems: MergedMediaItem[];
-  dataSource?: "supabase" | "wireframe-store";
-}
-
-interface DateGroup {
-  dateKey: string;
-  formattedDate: string;
-  relativeLabel: string;
-  items: MergedMediaItem[];
-}
-
-function getItemDate(item: MergedMediaItem): string | null {
-  return item.next_air_date || item.release_date || null;
-}
-
-function formatDateBanner(dateStr: string): { full: string; relative: string } {
-  try {
-    const [year, month, day] = dateStr.split("-").map(Number);
-    const dateObj = new Date(year, month - 1, day, 12, 0, 0);
-
-    const full = dateObj
-      .toLocaleDateString("en-US", {
-        weekday: "long",
-        year: "numeric",
-        month: "long",
-        day: "numeric",
-      })
-      .toUpperCase();
-
-    // Calculate relative distance
-    const today = new Date();
-    const todayNoon = new Date(
-      today.getFullYear(),
-      today.getMonth(),
-      today.getDate(),
-      12,
-      0,
-      0,
-    );
-    const diffDays = Math.round(
-      (dateObj.getTime() - todayNoon.getTime()) / (1000 * 60 * 60 * 24),
-    );
-
-    let relative = "";
-    if (diffDays === 0) {
-      relative = "TODAY";
-    } else if (diffDays === 1) {
-      relative = "TOMORROW";
-    } else if (diffDays === -1) {
-      relative = "YESTERDAY";
-    } else if (diffDays > 1 && diffDays <= 6) {
-      const weekday = dateObj
-        .toLocaleDateString("en-US", { weekday: "long" })
-        .toUpperCase();
-      relative = `THIS ${weekday}`;
-    } else if (diffDays > 6 && diffDays <= 13) {
-      const weekday = dateObj
-        .toLocaleDateString("en-US", { weekday: "long" })
-        .toUpperCase();
-      relative = `NEXT ${weekday}`;
-    } else if (diffDays > 13) {
-      relative = `IN ${diffDays} DAYS`;
-    } else {
-      relative = `${Math.abs(diffDays)} DAYS AGO`;
-    }
-
-    return { full, relative };
-  } catch {
-    return { full: dateStr.toUpperCase(), relative: "" };
-  }
-}
-
-type TimeHorizon = "upcoming" | "next_30" | "next_90" | "all" | "past";
+import {
+  FilterSearchInput,
+  FilterSection,
+  FilterSidebar,
+  FilterSidebarHeader,
+  SegmentedControl,
+} from "@/components/FilterSidebar";
+import {
+  DateGroup,
+  MEDIA_GRID_CLASS,
+  MediaType,
+  MergedMediaItem,
+  ReleaseCalendarProps,
+  TimeHorizon,
+} from "@/types";
+import { formatDateBanner, getItemDate } from "@/lib/utils";
 
 const TIME_HORIZONS: Array<{ key: TimeHorizon; label: string }> = [
   { key: "upcoming", label: "UPCOMING" },
@@ -105,39 +45,34 @@ export default function ReleaseCalendar({
   const [queueFilter, setQueueFilter] = useState<
     "all" | "watching" | "want_to_watch"
   >("all");
-  const [timeHorizonFilter, setTimeHorizonFilter] = useState<
-    "upcoming" | "next_30" | "next_90" | "all" | "past"
-  >("upcoming");
+  const [timeHorizonFilter, setTimeHorizonFilter] = useState<TimeHorizon>("upcoming");
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
 
   // Progressive reveal / Lazy load pagination for date groups
-  const [visibleDateLimit, setVisibleDateLimit] = useState(4);
+  const [visibleDateLimit, setVisibleDateLimit] = useState<number>(4);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
 
   function handleCardStateChange(updated: MergedMediaItem) {
     setItems((prev) =>
-      prev.map((item) =>
-        item.tmdb_id === updated.tmdb_id ? { ...item, ...updated } : item,
-      ),
+      prev.map((item) => (item.tmdb_id === updated.tmdb_id ? updated : item)),
     );
   }
 
   // Filter and group items into chronological date groups
   const dateGroups: DateGroup[] = useMemo(() => {
-    const today = new Date();
-    const todayStr = today.toISOString().split("T")[0];
+    const today = new Date().toISOString().slice(0, 10);
 
     // 30 and 90 day thresholds
-    const in30Days = new Date(today);
-    in30Days.setDate(in30Days.getDate() + 30);
-    const in30Str = in30Days.toISOString().split("T")[0];
-
-    const in90Days = new Date(today);
-    in90Days.setDate(in90Days.getDate() + 90);
-    const in90Str = in90Days.toISOString().split("T")[0];
+    const now = new Date();
+    const plus30Days = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000)
+      .toISOString()
+      .slice(0, 10);
+    const plus90Days = new Date(now.getTime() + 90 * 24 * 60 * 60 * 1000)
+      .toISOString()
+      .slice(0, 10);
 
     // Filter relevant items (only items in WANT or WATCHING that have a valid date)
-    const eligibleItems = items.filter((item) => {
+    const validItems = items.filter((item) => {
       // Must be queued in want_to_watch or watching
       if (item.status !== "want_to_watch" && item.status !== "watching") {
         return false;
@@ -154,11 +89,11 @@ export default function ReleaseCalendar({
       }
 
       // Local title filter
-      if (localTitleFilter.trim()) {
-        const match = item.title
-          .toLowerCase()
-          .includes(localTitleFilter.toLowerCase().trim());
-        if (!match) return false;
+      if (
+        localTitleFilter.trim() &&
+        !item.title.toLowerCase().includes(localTitleFilter.trim().toLowerCase())
+      ) {
+        return false;
       }
 
       // Date requirement
@@ -166,56 +101,58 @@ export default function ReleaseCalendar({
       if (!itemDate) return false;
 
       // Time horizon filter
-      if (timeHorizonFilter === "upcoming" && itemDate < todayStr) {
-        return false;
+      if (timeHorizonFilter === "upcoming") {
+        return itemDate >= today;
       }
-      if (
-        timeHorizonFilter === "next_30" &&
-        (itemDate < todayStr || itemDate > in30Str)
-      ) {
-        return false;
+      if (timeHorizonFilter === "next_30") {
+        return itemDate >= today && itemDate <= plus30Days;
       }
-      if (
-        timeHorizonFilter === "next_90" &&
-        (itemDate < todayStr || itemDate > in90Str)
-      ) {
-        return false;
+      if (timeHorizonFilter === "next_90") {
+        return itemDate >= today && itemDate <= plus90Days;
       }
-      if (timeHorizonFilter === "past" && itemDate >= todayStr) {
-        return false;
+      if (timeHorizonFilter === "past") {
+        return itemDate < today;
+      }
+      if (timeHorizonFilter === "all") {
+        return itemDate >= today;
       }
 
       return true;
     });
 
     // Group items by date string
-    const groupedMap = new Map<string, MergedMediaItem[]>();
-    for (const item of eligibleItems) {
+    const map = new Map<string, MergedMediaItem[]>();
+    for (const item of validItems) {
       const d = getItemDate(item)!;
-      const list = groupedMap.get(d) || [];
+      const list = map.get(d) ?? [];
       list.push(item);
-      groupedMap.set(d, list);
+      map.set(d, list);
     }
 
     // Sort the date keys
-    const sortedDates = Array.from(groupedMap.keys()).sort((a, b) => {
+    const sortedDates = Array.from(map.keys()).sort((a, b) => {
       return sortOrder === "asc" ? a.localeCompare(b) : b.localeCompare(a);
     });
 
     return sortedDates.map((dateKey) => {
+      const dateItems = map.get(dateKey) ?? [];
+      // Sort items within each date group alphabetically by title
+      dateItems.sort((a, b) => a.title.localeCompare(b.title));
+
       const { full, relative } = formatDateBanner(dateKey);
+
       return {
         dateKey,
         formattedDate: full,
         relativeLabel: relative,
-        items: groupedMap.get(dateKey) || [],
+        items: dateItems,
       };
     });
   }, [
     items,
-    localTitleFilter,
-    mediaTypeFilter,
     queueFilter,
+    mediaTypeFilter,
+    localTitleFilter,
     timeHorizonFilter,
     sortOrder,
   ]);
@@ -233,10 +170,10 @@ export default function ReleaseCalendar({
     const observer = new IntersectionObserver(
       (entries) => {
         if (entries[0].isIntersecting) {
-          setVisibleDateLimit((prev) => prev + 3);
+          setVisibleDateLimit((prev) => Math.min(prev + 4, dateGroups.length));
         }
       },
-      { rootMargin: "250px" },
+      { rootMargin: "300px" },
     );
 
     observer.observe(sentinel);
@@ -248,86 +185,48 @@ export default function ReleaseCalendar({
   return (
     <div className="flex flex-col lg:flex-row gap-5 sm:gap-6 items-start w-full">
       {/* =====================================================================
-          LEFT (20%) FRAME: Archival Upcoming Releases Filter Console
+          LEFT (20%) FRAME: High-Pop Minimalist Upcoming Releases Filter Console
           ===================================================================== */}
-      <aside className="w-full lg:w-72 shrink-0 border border-stone-300 rounded-md bg-stone-50 p-4 shadow-sm space-y-4">
+      <FilterSidebar>
         {/* Frame Header with View Title & Count */}
-        <div className="border-b border-stone-200 pb-3 flex items-center justify-between gap-2">
-          <h2 className="font-serif text-sm sm:text-base font-bold text-stone-900 tracking-tight truncate">
-            UPCOMING RADAR
-          </h2>
-          <span className="text-xs font-mono font-medium px-2 py-0.5 rounded border border-stone-300 shrink-0 bg-stone-200 text-stone-700">
-            [{totalItemsCount}]
-          </span>
-        </div>
+        <FilterSidebarHeader
+          title="UPCOMING RADAR"
+          count={totalItemsCount}
+        />
 
         {/* 1. Filter by Title */}
         <div>
-          <input
+          <FilterSearchInput
             id="calendar-title-filter"
-            type="text"
             value={localTitleFilter}
             onChange={(e) => setLocalTitleFilter(e.target.value)}
             placeholder="FILTER TITLE..."
-            className="w-full h-9 border border-stone-300 rounded-md px-2.5 bg-stone-50 text-stone-900 text-xs sm:text-sm font-sans focus:outline-none focus:border-stone-500 placeholder:text-stone-400"
           />
         </div>
 
         {/* 2. Media Type Chip Toggle */}
-        <div className="space-y-1">
-          <span className="block text-[10px] font-mono font-medium uppercase text-stone-500 tracking-wider">
-            MEDIA TYPE
-          </span>
-          <div className="grid grid-cols-3 border border-stone-300 divide-x divide-stone-300 rounded-md overflow-hidden text-xs sm:text-sm font-mono uppercase text-center bg-stone-50 shadow-sm">
-            <button
-              type="button"
-              onClick={() => setMediaTypeFilter("all")}
-              className={`py-2 transition-colors cursor-pointer text-center ${
-                mediaTypeFilter === "all"
-                  ? "bg-stone-800 text-white font-medium"
-                  : "bg-stone-50 text-stone-600 hover:bg-stone-100"
-              }`}
-            >
-              ALL
-            </button>
-            <button
-              type="button"
-              onClick={() => setMediaTypeFilter("movie")}
-              className={`py-2 transition-colors cursor-pointer text-center ${
-                mediaTypeFilter === "movie"
-                  ? "bg-stone-800 text-white font-medium"
-                  : "bg-stone-50 text-stone-600 hover:bg-stone-100"
-              }`}
-            >
-              MOVIES
-            </button>
-            <button
-              type="button"
-              onClick={() => setMediaTypeFilter("tv")}
-              className={`py-2 transition-colors cursor-pointer text-center ${
-                mediaTypeFilter === "tv"
-                  ? "bg-stone-800 text-white font-medium"
-                  : "bg-stone-50 text-stone-600 hover:bg-stone-100"
-              }`}
-            >
-              TV
-            </button>
-          </div>
-        </div>
+        <FilterSection label="MEDIA TYPE">
+          <SegmentedControl
+            value={mediaTypeFilter}
+            onChange={setMediaTypeFilter}
+            options={[
+              { value: "all", label: "ALL" },
+              { value: "movie", label: "MOVIES" },
+              { value: "tv", label: "TV" },
+            ]}
+          />
+        </FilterSection>
 
         {/* 3. Tracked Queue Chip Toggle */}
-        <div className="space-y-1">
-          <span className="block text-[10px] font-mono font-medium uppercase text-stone-500 tracking-wider">
-            TRACKED QUEUE
-          </span>
-          <div className="grid grid-cols-3 border border-stone-300 divide-x divide-stone-300 rounded-md overflow-hidden text-xs sm:text-sm font-mono uppercase text-center bg-stone-50 shadow-sm">
+        <FilterSection label="TRACKED QUEUE">
+          <div className="grid grid-cols-3 p-1 bg-[#F4F3F0] rounded-xl gap-1 text-xs sm:text-sm font-mono uppercase text-center">
             <button
               type="button"
               onClick={() => setQueueFilter("all")}
-              className={`py-2 transition-colors cursor-pointer text-center ${
+              className={`py-2.5 transition-all cursor-pointer text-center rounded-lg ${
                 queueFilter === "all"
-                  ? "bg-stone-800 text-white font-medium"
-                  : "bg-stone-50 text-stone-600 hover:bg-stone-100"
+                  ? "bg-zinc-800 hover:bg-zinc-700 text-white font-bold shadow-sm"
+                  : "text-zinc-600 hover:text-zinc-900 hover:bg-zinc-200/80 font-medium"
               }`}
             >
               ALL
@@ -335,10 +234,10 @@ export default function ReleaseCalendar({
             <button
               type="button"
               onClick={() => setQueueFilter("watching")}
-              className={`py-2 transition-colors cursor-pointer text-center ${
+              className={`py-2.5 transition-all cursor-pointer text-center rounded-lg ${
                 queueFilter === "watching"
-                  ? "bg-stone-800 text-white font-medium"
-                  : "bg-stone-50 text-stone-600 hover:bg-stone-100"
+                  ? "bg-[#818CF8] text-indigo-950 font-black shadow-md ring-2 ring-indigo-500/30"
+                  : "text-zinc-600 hover:text-zinc-900 hover:bg-zinc-200/80 font-medium"
               }`}
             >
               WATCHING
@@ -346,23 +245,20 @@ export default function ReleaseCalendar({
             <button
               type="button"
               onClick={() => setQueueFilter("want_to_watch")}
-              className={`py-2 transition-colors cursor-pointer text-center ${
+              className={`py-2.5 transition-all cursor-pointer text-center rounded-lg ${
                 queueFilter === "want_to_watch"
-                  ? "bg-orange-700 text-white font-medium"
-                  : "bg-stone-50 text-stone-600 hover:bg-stone-100"
+                  ? "bg-[#FF7A50] text-zinc-950 font-black shadow-md ring-2 ring-orange-500/30"
+                  : "text-zinc-600 hover:text-zinc-900 hover:bg-zinc-200/80 font-medium"
               }`}
             >
               WANT
             </button>
           </div>
-        </div>
+        </FilterSection>
 
         {/* 4. Time Horizon Filter */}
-        <div className="space-y-1">
-          <span className="block text-[10px] font-mono font-medium uppercase text-stone-500 tracking-wider">
-            TIME HORIZON
-          </span>
-          <div className="grid grid-cols-2 gap-1.5 text-xs font-mono uppercase">
+        <FilterSection label="TIME HORIZON">
+          <div className="grid grid-cols-2 gap-1.5 text-xs sm:text-sm font-mono uppercase">
             {TIME_HORIZONS.map((h) => {
               const isActive = timeHorizonFilter === h.key;
               return (
@@ -370,10 +266,10 @@ export default function ReleaseCalendar({
                   key={h.key}
                   type="button"
                   onClick={() => setTimeHorizonFilter(h.key)}
-                  className={`py-2 px-1 border rounded-md transition-colors cursor-pointer text-center truncate ${
+                  className={`py-2 px-1 rounded-xl transition-all cursor-pointer text-center truncate font-bold ${
                     isActive
-                      ? "bg-stone-800 text-white border-stone-800 font-medium shadow-sm"
-                      : "bg-stone-50 text-stone-700 hover:bg-stone-100 border-stone-300"
+                      ? "bg-zinc-800 hover:bg-zinc-700 text-white shadow-sm"
+                      : "bg-[#F4F3F0] text-zinc-600 hover:bg-zinc-200 font-medium"
                   }`}
                 >
                   {h.label}
@@ -381,50 +277,31 @@ export default function ReleaseCalendar({
               );
             })}
           </div>
-        </div>
+        </FilterSection>
 
         {/* 5. Sort Order */}
-        <div className="space-y-1">
-          <span className="block text-[10px] font-mono font-medium uppercase text-stone-500 tracking-wider">
-            SORT ORDER
-          </span>
-          <div className="grid grid-cols-2 border border-stone-300 divide-x divide-stone-300 rounded-md overflow-hidden text-xs sm:text-sm font-mono uppercase text-center bg-stone-50 shadow-sm">
-            <button
-              type="button"
-              onClick={() => setSortOrder("asc")}
-              className={`py-2 transition-colors cursor-pointer text-center ${
-                sortOrder === "asc"
-                  ? "bg-stone-800 text-white font-medium"
-                  : "bg-stone-50 text-stone-600 hover:bg-stone-100"
-              }`}
-            >
-              ASC ↑ (SOONEST)
-            </button>
-            <button
-              type="button"
-              onClick={() => setSortOrder("desc")}
-              className={`py-2 transition-colors cursor-pointer text-center ${
-                sortOrder === "desc"
-                  ? "bg-stone-800 text-white font-medium"
-                  : "bg-stone-50 text-stone-600 hover:bg-stone-100"
-              }`}
-            >
-              DESC ↓ (LATEST)
-            </button>
-          </div>
-        </div>
-      </aside>
+        <FilterSection label="SORT ORDER">
+          <SegmentedControl
+            value={sortOrder}
+            onChange={setSortOrder}
+            options={[
+              { value: "asc", label: "ASC ↑ (SOONEST)" },
+              { value: "desc", label: "DESC ↓ (LATEST)" },
+            ]}
+          />
+        </FilterSection>
+      </FilterSidebar>
 
       {/* =========================================================================
           RIGHT (80%) FRAME: Chronological Timeline of Release Groups
           ========================================================================= */}
       <div className="flex-1 min-w-0 w-full space-y-6">
         {dateGroups.length === 0 ? (
-          <section className="border border-stone-300 rounded-md bg-stone-50 p-8 sm:p-12 text-center space-y-3 shadow-sm">
-            <div className="font-mono text-xs text-stone-500 uppercase font-medium tracking-widest">
+          <section className="rounded-2xl bg-white p-8 sm:p-12 text-center space-y-3 shadow-[0_8px_30px_rgb(0,0,0,0.04)] ring-1 ring-black/5">
+            <div className="font-mono text-xs text-zinc-700 uppercase font-bold tracking-widest">
               [ NO UPCOMING RELEASES FOUND ]
             </div>
-            <p className="text-xs sm:text-sm font-sans text-stone-600 max-w-md mx-auto leading-relaxed">
+            <p className="text-xs sm:text-sm font-sans text-zinc-700 max-w-md mx-auto leading-relaxed font-medium">
               No tracked items in your Want-to-Watch or Watching queues match
               the current filters with confirmed release dates.
             </p>
@@ -434,24 +311,24 @@ export default function ReleaseCalendar({
             {visibleGroups.map((group) => (
               <section
                 key={group.dateKey}
-                className="border border-stone-300 rounded-md bg-stone-50 overflow-hidden shadow-sm"
+                className="rounded-2xl bg-white/80 overflow-hidden shadow-[0_8px_30px_rgb(0,0,0,0.03)] ring-1 ring-black/5"
               >
                 {/* Date Banner */}
-                <header className="border-b border-stone-200 bg-stone-100/70 px-4 py-2.5 flex flex-wrap items-center justify-between gap-2">
+                <header className="bg-white px-5 py-3.5 flex flex-wrap items-center justify-between gap-2 border-b border-zinc-200">
                   <div className="flex items-center gap-2.5">
-                    <span className="w-2 h-2 rounded-full bg-stone-600 shrink-0" />
-                    <h2 className="text-xs sm:text-sm font-serif font-bold uppercase tracking-wider text-stone-900">
+                    <span className="w-2.5 h-2.5 rounded-full bg-[#34D399] shadow-sm shadow-emerald-500/50 shrink-0" />
+                    <h2 className="text-xs sm:text-sm md:text-base font-sans font-black uppercase tracking-wider text-zinc-950">
                       {group.formattedDate}
                     </h2>
                   </div>
 
                   <div className="flex items-center gap-2">
                     {group.relativeLabel && (
-                      <span className="bg-stone-800 text-white text-[10px] font-mono font-medium uppercase px-2 py-0.5 rounded">
+                      <span className="bg-zinc-950 text-white text-[11px] font-mono font-bold uppercase px-2.5 py-0.5 rounded-lg shadow-sm">
                         {group.relativeLabel}
                       </span>
                     )}
-                    <span className="border border-stone-300 bg-stone-200 text-stone-700 text-[10px] font-mono font-medium uppercase px-2 py-0.5 rounded">
+                    <span className="bg-zinc-200 text-zinc-950 text-[11px] font-mono font-bold uppercase px-2.5 py-0.5 rounded-lg">
                       {group.items.length}{" "}
                       {group.items.length === 1 ? "RELEASE" : "RELEASES"}
                     </span>
@@ -482,7 +359,7 @@ export default function ReleaseCalendar({
                 <button
                   type="button"
                   onClick={() => setVisibleDateLimit((prev) => prev + 4)}
-                  className="border border-stone-300 rounded-md bg-stone-50 px-6 py-2.5 text-xs font-mono font-medium uppercase text-stone-800 hover:bg-stone-100 transition-colors cursor-pointer shadow-sm"
+                  className="rounded-xl bg-white px-6 py-3 text-xs sm:text-sm font-mono font-bold uppercase text-zinc-950 hover:bg-[#F4F3F0] transition-all cursor-pointer shadow-md ring-1 ring-black/5 active:scale-95"
                 >
                   LOAD MORE UPCOMING DATES ({dateGroups.length - visibleDateLimit}{" "}
                   REMAINING) ➔

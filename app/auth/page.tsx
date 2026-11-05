@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useTransition, Suspense } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import KoaxLogo from "@/components/Logo";
+import Logo from "@/components/Logo";
 import {
   getOperatorSessionAction,
   loginAction,
@@ -140,37 +140,41 @@ function AuthForm() {
 
   return (
     <div className="max-w-md w-full mx-auto my-6 sm:my-10">
-      {/* Centered KO-AX Brand Masthead */}
+      {/* Centered Kura Brand Masthead */}
       <div className="flex flex-col items-center justify-center mb-6 text-center select-none">
-        <div className="flex items-center font-serif tracking-tight text-4xl sm:text-5xl leading-none text-stone-900 font-bold">
-          <span>KO</span>
-          <KoaxLogo className="h-7 sm:h-8 w-auto text-stone-900 shrink-0 mx-1" />
-          <span>AX</span>
-        </div>
-        <span className="font-mono text-[10px] tracking-widest text-stone-500 uppercase mt-2 font-medium">
+        <Logo className="justify-center" />
+        <span className="font-mono text-xs tracking-widest text-zinc-700 uppercase mt-2.5 font-bold">
           PERSONAL MEDIA CONTROL SYSTEM
         </span>
       </div>
 
       {/* Container Card */}
-      <div className="border border-stone-300 rounded-md bg-stone-50 shadow-md shadow-stone-800/10 overflow-hidden">
-        {/* Terminal Header */}
-        <div className="border-b border-stone-300 bg-stone-900 text-stone-100 px-4 py-3 flex items-center justify-between">
-          <div className="flex items-center gap-2">
+      <div className="rounded-2xl bg-white shadow-[0_8px_30px_rgb(0,0,0,0.04)] overflow-hidden">
+        {/* Minimalist Terminal Header */}
+        <div className="bg-zinc-950 text-white px-5 py-4 flex items-center justify-between">
+          <div className="flex items-center gap-2.5">
             <span
-              className={`w-2 h-2 rounded-full inline-block ${
+              className={`w-2.5 h-2.5 rounded-full inline-block ${
                 currentOperator
-                  ? "bg-emerald-600"
+                  ? "bg-[#34D399] shadow-[0_0_8px_rgba(52,211,153,0.6)]"
                   : pendingVerificationEmail
-                    ? "bg-orange-700 animate-pulse"
-                    : "bg-stone-500"
+                    ? "bg-[#FF7A50] animate-pulse shadow-[0_0_8px_rgba(255,122,80,0.6)]"
+                    : "bg-zinc-600"
               }`}
             />
-            <h1 className="font-serif tracking-tight text-base sm:text-lg font-semibold">
+            <h1 className="font-sans tracking-tight text-sm sm:text-base font-black">
               Operator Access // Clearance
             </h1>
           </div>
-          <span className="font-mono text-[10px] uppercase border border-stone-600 text-stone-300 px-1.5 py-0.5 rounded">
+          <span
+            className={`font-mono text-[11px] uppercase px-2.5 py-1 rounded-md font-black tracking-wide ${
+              currentOperator
+                ? "bg-[#34D399] text-emerald-950"
+                : pendingVerificationEmail
+                  ? "bg-[#FF7A50] text-zinc-950"
+                  : "bg-zinc-800 text-zinc-300"
+            }`}
+          >
             {currentOperator
               ? "AUTHENTICATED"
               : pendingVerificationEmail
@@ -181,31 +185,31 @@ function AuthForm() {
 
         {/* State 1: Verification Required Notice */}
         {pendingVerificationEmail ? (
-          <div className="p-5 space-y-4">
-            <div className="border border-stone-300 rounded-md bg-stone-100 p-4 space-y-3">
+          <div className="p-6 space-y-4">
+            <div className="rounded-2xl bg-[#F4F3F0] p-5 space-y-3">
               <div className="flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-orange-700 inline-block animate-pulse" />
-                <span className="font-mono text-xs uppercase font-medium text-stone-800">
+                <span className="w-2.5 h-2.5 rounded-full bg-[#FF7A50] inline-block animate-pulse" />
+                <span className="font-mono text-xs uppercase font-black text-zinc-950">
                   VERIFICATION CLEARANCE DISPATCHED
                 </span>
               </div>
-              <h2 className="font-serif text-xl font-bold text-stone-900">
+              <h2 className="font-sans text-xl sm:text-2xl font-black text-zinc-950">
                 Check Your Email Inbox
               </h2>
-              <p className="font-mono text-xs text-stone-700 leading-relaxed">
+              <p className="font-mono text-xs sm:text-sm text-zinc-800 leading-relaxed font-bold">
                 A verification link was dispatched to:
                 <br />
-                <strong className="text-stone-900 font-semibold break-all font-mono">
+                <strong className="text-zinc-950 font-black break-all font-mono">
                   {pendingVerificationEmail}
                 </strong>
               </p>
-              <p className="text-xs text-stone-600 leading-relaxed font-sans">
+              <p className="text-xs sm:text-sm text-zinc-700 leading-relaxed font-medium">
                 Click the confirmation link in your email to activate your
                 account clearance, then sign in with your passcode.
               </p>
             </div>
 
-            <div className="space-y-2 pt-1">
+            <div className="space-y-2.5 pt-1">
               <button
                 type="button"
                 onClick={() => {
@@ -216,7 +220,7 @@ function AuthForm() {
                     message: "ENTER YOUR SECURITY PASSCODE TO SIGN IN.",
                   });
                 }}
-                className="w-full h-11 border border-stone-800 bg-stone-900 hover:bg-stone-800 text-white font-medium uppercase text-xs tracking-wider rounded-md shadow-sm cursor-pointer transition-colors"
+                className="w-full h-12 bg-zinc-950 hover:bg-black text-white font-black uppercase text-xs sm:text-sm tracking-wider rounded-xl shadow-md cursor-pointer transition-all active:scale-[0.99]"
               >
                 ➔ PROCEED TO OPERATOR SIGN IN
               </button>
@@ -225,7 +229,7 @@ function AuthForm() {
                 type="button"
                 onClick={handleResendVerification}
                 disabled={isPending}
-                className="w-full h-10 border border-stone-300 bg-stone-50 hover:bg-stone-100 text-stone-800 font-medium uppercase text-xs tracking-wider rounded-md cursor-pointer disabled:opacity-50 transition-colors"
+                className="w-full h-11 bg-[#F4F3F0] hover:bg-zinc-200 text-zinc-950 font-bold uppercase text-xs tracking-wider rounded-xl cursor-pointer disabled:opacity-50 transition-all"
               >
                 {isPending
                   ? "DISPATCHING LINK..."
@@ -235,21 +239,21 @@ function AuthForm() {
 
             {/* Diagnostic Status Box */}
             <div
-              className={`border p-2.5 rounded-md text-[11px] font-mono font-medium flex items-center gap-2 ${
+              className={`p-3.5 rounded-xl text-xs font-mono font-bold flex items-center gap-2.5 ${
                 feedback.type === "error"
-                  ? "border-red-300 bg-red-50 text-red-800"
+                  ? "bg-red-50 text-red-950"
                   : feedback.type === "success"
-                    ? "border-emerald-300 bg-emerald-50 text-emerald-800"
-                    : "border-stone-300 bg-stone-100 text-stone-700"
+                    ? "bg-emerald-50 text-emerald-950"
+                    : "bg-[#F4F3F0] text-zinc-950"
               }`}
             >
               <span
-                className={`w-2 h-2 rounded-full shrink-0 inline-block ${
+                className={`w-2.5 h-2.5 rounded-full shrink-0 inline-block ${
                   feedback.type === "error"
-                    ? "bg-red-700"
+                    ? "bg-red-500"
                     : feedback.type === "success"
-                      ? "bg-emerald-700"
-                      : "bg-stone-600"
+                      ? "bg-[#34D399]"
+                      : "bg-[#818CF8]"
                 }`}
               />
               <span className="truncate">{feedback.message}</span>
@@ -257,24 +261,24 @@ function AuthForm() {
           </div>
         ) : currentOperator ? (
           /* State 2: Active Authenticated Operator */
-          <div className="p-5 space-y-4">
-            <div className="border border-stone-300 rounded-md bg-stone-100 p-4 space-y-2">
-              <span className="font-mono text-[10px] text-stone-500 uppercase font-medium block">
+          <div className="p-6 space-y-5">
+            <div className="rounded-2xl bg-[#F4F3F0] p-5 space-y-2.5">
+              <span className="font-mono text-xs text-zinc-700 uppercase font-black block">
                 ACTIVE OPERATOR IDENTITY:
               </span>
-              <div className="font-serif font-bold text-xl text-stone-900 break-all">
+              <div className="font-sans font-black text-2xl text-zinc-950 break-all">
                 {currentOperator}
               </div>
-              <div className="flex items-center gap-2 pt-1 font-mono text-[11px] text-emerald-800 font-medium">
-                <span className="w-2 h-2 rounded-full bg-emerald-700 inline-block animate-pulse" />
-                <span>SESSION ENCRYPTED &amp; ACTIVE</span>
+              <div className="flex items-center gap-2 pt-1 font-mono text-xs font-black">
+                <span className="w-2.5 h-2.5 rounded-full bg-[#34D399] inline-block animate-pulse shadow-[0_0_8px_rgba(52,211,153,0.6)]" />
+                <span className="text-emerald-950">SESSION ENCRYPTED &amp; ACTIVE</span>
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-3 pt-2">
+            <div className="grid grid-cols-2 gap-3 pt-1">
               <Link
                 href="/"
-                className="h-10 flex items-center justify-center font-medium uppercase text-xs bg-stone-900 text-white hover:bg-stone-800 rounded-md transition-colors"
+                className="h-12 flex items-center justify-center font-bold uppercase text-xs sm:text-sm bg-zinc-800 hover:bg-zinc-700 text-white rounded-xl transition-all shadow-sm active:scale-[0.99]"
               >
                 ➔ MEDIA TRACKER
               </Link>
@@ -282,7 +286,7 @@ function AuthForm() {
                 type="button"
                 onClick={handleLogout}
                 disabled={isPending}
-                className="h-10 flex items-center justify-center font-medium uppercase text-xs bg-stone-50 text-stone-800 border border-stone-300 hover:bg-stone-100 rounded-md cursor-pointer transition-colors"
+                className="h-12 flex items-center justify-center font-bold uppercase text-xs sm:text-sm bg-[#F4F3F0] text-zinc-950 hover:bg-zinc-200 rounded-xl cursor-pointer transition-all"
               >
                 {isPending ? "EXITING..." : "LOGOUT OPERATOR"}
               </button>
@@ -292,53 +296,55 @@ function AuthForm() {
           /* State 3: Sign In / Register Form */
           <>
             {/* Mode Selector Tabs */}
-            <div className="grid grid-cols-2 border-b border-stone-300 divide-x divide-stone-300 text-xs font-mono font-medium uppercase">
-              <button
-                type="button"
-                onClick={() => {
-                  setMode("sign_in");
-                  setFeedback({
-                    type: "info",
-                    message: "ENTER SIGN IN CREDENTIALS.",
-                  });
-                }}
-                className={`py-3 transition-colors cursor-pointer ${
-                  mode === "sign_in"
-                    ? "bg-stone-800 text-white"
-                    : "bg-stone-50 text-stone-600 hover:bg-stone-100"
-                }`}
-              >
-                SIGN IN
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setMode("sign_up");
-                  setFeedback({
-                    type: "info",
-                    message: "ENTER NEW OPERATOR CREDENTIALS.",
-                  });
-                }}
-                className={`py-3 transition-colors cursor-pointer ${
-                  mode === "sign_up"
-                    ? "bg-stone-800 text-white"
-                    : "bg-stone-50 text-stone-600 hover:bg-stone-100"
-                }`}
-              >
-                REGISTER OPERATOR
-              </button>
+            <div className="p-3 pt-4">
+              <div className="grid grid-cols-2 p-1 bg-[#F4F3F0] rounded-xl gap-1 text-xs font-mono font-medium uppercase">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMode("sign_in");
+                    setFeedback({
+                      type: "info",
+                      message: "ENTER SIGN IN CREDENTIALS.",
+                    });
+                  }}
+                  className={`py-2.5 transition-all cursor-pointer rounded-lg text-xs font-bold ${
+                    mode === "sign_in"
+                      ? "bg-zinc-800 hover:bg-zinc-700 text-white shadow-sm"
+                      : "text-zinc-600 hover:text-zinc-900 hover:bg-zinc-200 font-medium"
+                  }`}
+                >
+                  SIGN IN
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMode("sign_up");
+                    setFeedback({
+                      type: "info",
+                      message: "ENTER NEW OPERATOR CREDENTIALS.",
+                    });
+                  }}
+                  className={`py-2.5 transition-all cursor-pointer rounded-lg text-xs font-bold ${
+                    mode === "sign_up"
+                      ? "bg-zinc-800 hover:bg-zinc-700 text-white shadow-sm"
+                      : "text-zinc-600 hover:text-zinc-900 hover:bg-zinc-200 font-medium"
+                  }`}
+                >
+                  REGISTER OPERATOR
+                </button>
+              </div>
             </div>
 
             {/* Input Form */}
             <form
               onSubmit={handleSubmit}
-              className="p-5 space-y-4 text-xs font-sans"
+              className="p-6 pt-2 space-y-4 text-xs font-sans"
             >
               {/* Email */}
-              <div className="space-y-1">
+              <div className="space-y-1.5">
                 <label
                   htmlFor="auth-email"
-                  className="block font-mono font-medium uppercase text-[11px] text-stone-700"
+                  className="block font-mono font-bold uppercase text-xs text-zinc-900"
                 >
                   OPERATOR IDENTIFIER (EMAIL):
                 </label>
@@ -348,16 +354,16 @@ function AuthForm() {
                   required
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  placeholder="OPERATOR@KO-AX.LOCAL"
-                  className="w-full border border-stone-300 rounded-md px-3 py-2 bg-stone-50 text-stone-900 text-xs font-mono focus:outline-none focus:border-stone-500"
+                  placeholder="OPERATOR@KURA.LOCAL"
+                  className="w-full rounded-xl px-4 py-3 bg-[#F4F3F0] text-zinc-950 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-zinc-950/20 placeholder:text-zinc-500 font-medium transition-all"
                 />
               </div>
 
               {/* Password */}
-              <div className="space-y-1">
+              <div className="space-y-1.5">
                 <label
                   htmlFor="auth-password"
-                  className="block font-mono font-medium uppercase text-[11px] text-stone-700"
+                  className="block font-mono font-bold uppercase text-xs text-zinc-900"
                 >
                   SECURITY PASSCODE:
                 </label>
@@ -368,25 +374,25 @@ function AuthForm() {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••••••"
-                  className="w-full border border-stone-300 rounded-md px-3 py-2 bg-stone-50 text-stone-900 text-xs font-mono focus:outline-none focus:border-stone-500"
+                  className="w-full rounded-xl px-4 py-3 bg-[#F4F3F0] text-zinc-950 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-zinc-950/20 placeholder:text-zinc-500 font-medium transition-all"
                 />
               </div>
 
               {/* Stay Logged In Toggle */}
               <div className="pt-1">
-                <label className="flex items-center gap-2.5 cursor-pointer select-none">
+                <label className="flex items-center gap-3 cursor-pointer select-none">
                   <input
                     type="checkbox"
                     id="stay-logged-in-checkbox"
                     checked={stayLoggedIn}
                     onChange={(e) => setStayLoggedIn(e.target.checked)}
-                    className="h-4 w-4 border-stone-300 rounded accent-stone-800 cursor-pointer"
+                    className="h-4.5 w-4.5 rounded accent-zinc-950 cursor-pointer"
                   />
-                  <span className="font-mono text-[11px] font-medium text-stone-800">
+                  <span className="font-mono text-xs font-bold text-zinc-950">
                     KEEP SESSION ACTIVE (PERSIST TOKEN: 30 DAYS)
                   </span>
                 </label>
-                <p className="font-mono text-[9px] text-stone-500 pl-6.5 pt-0.5 normal-case">
+                <p className="font-mono text-[11px] text-zinc-700 pl-7 pt-1 font-medium normal-case">
                   {stayLoggedIn
                     ? "Tokens are preserved in secure HTTP cookies across browser restarts."
                     : "Session terminates automatically when browser is closed."}
@@ -397,7 +403,7 @@ function AuthForm() {
               <button
                 type="submit"
                 disabled={isPending}
-                className="w-full h-11 bg-orange-700 hover:bg-orange-800 text-white font-medium uppercase text-xs tracking-wider rounded-md shadow-sm transition-colors cursor-pointer mt-2"
+                className="w-full h-12 bg-zinc-800 hover:bg-zinc-700 active:scale-[0.99] text-white font-bold uppercase text-xs sm:text-sm tracking-wider rounded-xl shadow-sm transition-all cursor-pointer mt-3"
               >
                 {isPending
                   ? "VERIFYING CLEARANCE..."
@@ -408,32 +414,32 @@ function AuthForm() {
 
               {/* Diagnostic Status Box */}
               <div
-                className={`border p-2.5 rounded-md text-[11px] font-mono font-medium flex items-center gap-2 ${
+                className={`p-3.5 rounded-xl text-xs font-mono font-bold flex items-center gap-2.5 ${
                   feedback.type === "error"
-                    ? "border-red-300 bg-red-50 text-red-800"
+                    ? "bg-red-50 text-red-950"
                     : feedback.type === "success"
-                      ? "border-emerald-300 bg-emerald-50 text-emerald-800"
-                      : "border-stone-300 bg-stone-100 text-stone-700"
+                      ? "bg-emerald-50 text-emerald-950"
+                      : "bg-[#F4F3F0] text-zinc-950"
                 }`}
               >
                 <span
-                  className={`w-2 h-2 rounded-full shrink-0 inline-block ${
+                  className={`w-2.5 h-2.5 rounded-full shrink-0 inline-block ${
                     feedback.type === "error"
-                      ? "bg-red-700"
+                      ? "bg-red-500"
                       : feedback.type === "success"
-                        ? "bg-emerald-700"
-                        : "bg-stone-600"
+                        ? "bg-[#34D399]"
+                        : "bg-[#818CF8]"
                   }`}
                 />
                 <span className="truncate">{feedback.message}</span>
               </div>
 
               {/* Security Protocol Footer */}
-              <div className="pt-2 border-t border-stone-200 flex justify-between items-center text-xs">
-                <span className="font-mono text-[10px] text-stone-500 font-medium uppercase">
+              <div className="pt-3 border-t border-zinc-200/60 flex justify-between items-center text-xs">
+                <span className="font-mono text-[11px] text-zinc-700 font-bold uppercase">
                   OPERATOR SECURITY PROTOCOL
                 </span>
-                <span className="font-mono text-[10px] text-stone-400">
+                <span className="font-mono text-[11px] text-zinc-700 font-bold">
                   v0.2.0
                 </span>
               </div>
@@ -449,7 +455,7 @@ export default function AuthPage() {
   return (
     <Suspense
       fallback={
-        <div className="max-w-md w-full mx-auto my-12 border border-stone-300 rounded-md bg-stone-50 p-6 font-mono text-xs uppercase font-medium text-stone-600 text-center shadow-sm">
+        <div className="max-w-md w-full mx-auto my-12 rounded-2xl bg-white p-6 font-mono text-xs uppercase font-medium text-zinc-500 text-center shadow-[0_8px_30px_rgb(0,0,0,0.04)]">
           INITIALIZING OPERATOR SECURITY TERMINAL...
         </div>
       }

@@ -5,7 +5,8 @@ import {
   SeasonWireframeGroup,
   UserEpisodeRecord,
   UserMediaRecord,
-} from "./types";
+  WireframeStore,
+} from "@/types";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
 const supabaseKey =
@@ -36,13 +37,6 @@ export function getSupabaseClient(): SupabaseClient | null {
 // STRUCTURAL WIREFRAME SEED STORE (Fallback when Supabase env is not yet set
 // or user is browsing unauthenticated in wireframe mode)
 // ============================================================================
-
-interface WireframeStore {
-  media: Map<number, MediaRecord>;
-  userMedia: Map<number, UserMediaRecord>;
-  userEpisodes: Map<number, UserEpisodeRecord>;
-  seasonsByMedia: Map<number, SeasonWireframeGroup[]>;
-}
 
 // Clean slate: all demo and starter pack media removed per user direction.
 const initialMedia: MediaRecord[] = [];
@@ -106,9 +100,12 @@ export function clearWireframeStore(): void {
 
 export function buildDefaultSeasonsForTv(
   tmdbId: number,
-  episodeStateMap: Map<number, UserEpisodeRecord>
+  episodeStateMap: Map<number, UserEpisodeRecord>,
+  seasonCount: number = 2
 ): SeasonWireframeGroup[] {
-  const seasons: SeasonWireframeGroup[] = [1, 2].map((seasonNum) => ({
+  const count = Math.max(1, Math.min(seasonCount, 30));
+  const seasonNumbers = Array.from({ length: count }, (_, i) => i + 1);
+  const seasons: SeasonWireframeGroup[] = seasonNumbers.map((seasonNum) => ({
     season_number: seasonNum,
     name: `Season ${seasonNum}`,
     episodes: [1, 2, 3, 4].map((epNum) => {

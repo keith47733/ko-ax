@@ -13,7 +13,7 @@ export default function CalendarPage() {
   return (
     <Suspense
       fallback={
-        <div className="border border-stone-300 rounded-md bg-stone-50 p-6 text-xs uppercase font-mono text-stone-600 shadow-sm">
+        <div className="rounded-2xl bg-white p-6 text-xs uppercase font-mono text-zinc-500 shadow-[0_8px_30px_rgb(0,0,0,0.04)]">
           LOADING RELEASE CALENDAR RADAR...
         </div>
       }

@@ -21,20 +21,11 @@ import {
   SeasonWireframeGroup,
   UserEpisodeRecord,
   UserMediaRecord,
-} from "@/lib/types";
-
-interface TmdbRawResult {
-  id: number;
-  media_type?: string;
-  title?: string;
-  name?: string;
-  poster_path?: string | null;
-  backdrop_path?: string | null;
-  release_date?: string;
-  first_air_date?: string;
-  overview?: string;
-  vote_average?: number;
-}
+  TmdbRawResult,
+  RawTmdbRecommendation,
+  DiscoveredFallbackItem,
+  TmdbDetailPayload,
+} from "@/types";
 
 function getTmdbHeaders(): HeadersInit {
   const token = process.env.TMDB_ACCESS_TOKEN;
@@ -86,15 +77,17 @@ async function getAuthenticatedUser(): Promise<{
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
     process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
 
+  let supabaseClient: Awaited<ReturnType<typeof createServerSupabaseClient>> | null = null;
+
   if (supabaseUrl && supabaseKey) {
     try {
-      const supabase = await createServerSupabaseClient();
+      supabaseClient = await createServerSupabaseClient();
       const {
         data: { user },
-      } = await supabase.auth.getUser();
+      } = await supabaseClient.auth.getUser();
 
       if (user) {
-        return { supabase, user: { id: user.id, email: user.email } };
+        return { supabase: supabaseClient, user: { id: user.id, email: user.email } };
       }
     } catch {
       // Fall through to simulated check
@@ -108,7 +101,7 @@ async function getAuthenticatedUser(): Promise<{
       const parsed = JSON.parse(simCookie.value);
       if (parsed.email) {
         return {
-          supabase: null,
+          supabase: supabaseClient,
           user: { id: "simulated_operator", email: parsed.email },
         };
       }
@@ -117,7 +110,7 @@ async function getAuthenticatedUser(): Promise<{
     // ignore
   }
 
-  return { supabase: null, user: null };
+  return { supabase: supabaseClient, user: null };
 }
 
 /**
@@ -309,7 +302,7 @@ export async function getTrackedMediaAction(): Promise<{
   const store = getWireframeStore();
 
   if (supabase && user) {
-    const { data: rows, error } = await supabase
+    const { data: rows } = await supabase
       .from("user_media")
       .select(
           `
@@ -351,12 +344,7 @@ export async function getTrackedMediaAction(): Promise<{
         });
       }
 
-      if (error) {
-        console.error(
-          "[KO-AX] Error fetching user_media from Supabase:",
-          error.message || JSON.stringify(error)
-        );
-      } else if (rows) {
+      if (rows) {
         const items: MergedMediaItem[] = rows.map((row) => {
           const mediaObj = Array.isArray(row.media) ? row.media[0] : row.media;
           const tmdbId = Number(row.tmdb_id);
@@ -435,15 +423,8 @@ export async function upsertUserMediaAction(input: {
     poster_path: input.poster_path,
     backdrop_path: input.backdrop_path ?? existingMedia?.backdrop_path ?? null,
     release_date: input.release_date ?? existingMedia?.release_date ?? null,
-    next_air_date:
-      input.next_air_date ??
-      existingMedia?.next_air_date ??
-      input.release_date ??
-      "2026-11-15",
-    next_episode_label:
-      input.next_episode_label ??
-      existingMedia?.next_episode_label ??
-      (input.media_type === "tv" ? "NEXT EPISODE SCHEDULED" : "UPCOMING RELEASE"),
+    next_air_date: input.next_air_date ?? existingMedia?.next_air_date ?? null,
+    next_episode_label: input.next_episode_label ?? existingMedia?.next_episode_label ?? null,
     overview: input.overview ?? existingMedia?.overview ?? null,
   });
 
@@ -475,33 +456,25 @@ export async function upsertUserMediaAction(input: {
         .delete()
         .match({ user_id: user.id, tmdb_id: input.tmdb_id });
 
-      if (deleteError) {
-        console.error("[KO-AX] Error deleting user_media row:", deleteError);
-      } else {
+      if (!deleteError) {
         persistedTo = "supabase";
       }
     } else {
       // 1. Upsert into `media` cache table with sanitized dates
-      const { error: mediaError } = await supabase.from("media").upsert(
+      await supabase.from("media").upsert(
         {
           tmdb_id: input.tmdb_id,
           title: input.title,
           media_type: input.media_type,
           poster_path: input.poster_path,
           release_date: sanitizeDate(input.release_date),
-          next_air_date: sanitizeDate(
-            input.next_air_date ?? input.release_date
-          ),
+          next_air_date: sanitizeDate(input.next_air_date ?? null),
           next_episode_label: input.next_episode_label ?? null,
           overview: input.overview ?? null,
           updated_at: now,
         },
         { onConflict: "tmdb_id" }
       );
-
-      if (mediaError) {
-        console.error("[KO-AX] Error caching media metadata to Supabase:", mediaError);
-      }
 
       // 2. Upsert into `user_media` junction table
       const { error: userMediaError } = await supabase.from("user_media").upsert(
@@ -515,16 +488,10 @@ export async function upsertUserMediaAction(input: {
         { onConflict: "user_id,tmdb_id" }
       );
 
-      if (userMediaError) {
-        console.error("[KO-AX] Error saving user_media to Supabase:", userMediaError);
-      } else {
+      if (!userMediaError) {
         persistedTo = "supabase";
       }
     }
-  } else {
-    console.warn(
-      "[KO-AX] Supabase write skipped (no active Supabase session). Running in wireframe mode."
-    );
   }
 
   revalidatePath("/");
@@ -607,7 +574,7 @@ export async function toggleEpisodeWatchedAction(input: {
   const { supabase, user } = await getAuthenticatedUser();
 
   if (supabase && user) {
-    const { error: mediaError } = await supabase.from("media").upsert(
+    await supabase.from("media").upsert(
       {
         tmdb_id: input.tmdb_id,
         title: input.title,
@@ -616,9 +583,6 @@ export async function toggleEpisodeWatchedAction(input: {
       },
       { onConflict: "tmdb_id" }
     );
-    if (mediaError) {
-      console.error("[KO-AX] Error caching TV metadata for episode:", mediaError);
-    }
 
     const { error: epError } = await supabase.from("user_episodes").upsert(
       {
@@ -633,9 +597,7 @@ export async function toggleEpisodeWatchedAction(input: {
       { onConflict: "user_id,tmdb_episode_id" }
     );
 
-    if (epError) {
-      console.error("[KO-AX] Error saving user_episode to Supabase:", epError);
-    } else {
+    if (!epError) {
       persistedTo = "supabase";
     }
   }
@@ -649,6 +611,91 @@ export async function toggleEpisodeWatchedAction(input: {
     ok: true,
     watched_boolean: input.watched_boolean,
     watch_date: watchDate,
+    persistedTo,
+  };
+}
+
+/**
+ * Bulk season episode checkbox mutation:
+ * Updates all episodes for a TV season in `public.user_episodes` and wireframe store.
+ */
+export async function toggleSeasonWatchedAction(input: {
+  tmdb_id: number;
+  title: string;
+  poster_path: string | null;
+  season_number: number;
+  episodes: Array<{
+    tmdb_episode_id: number;
+    episode_number: number;
+  }>;
+  watched_boolean: boolean;
+}): Promise<{
+  ok: boolean;
+  season_number: number;
+  watched_boolean: boolean;
+  watch_date: string | null;
+  count: number;
+  persistedTo: "supabase" | "wireframe-store";
+}> {
+  const watchDate = input.watched_boolean ? new Date().toISOString() : null;
+  const store = getWireframeStore();
+
+  for (const ep of input.episodes) {
+    store.userEpisodes.set(ep.tmdb_episode_id, {
+      tmdb_id: input.tmdb_id,
+      tmdb_episode_id: ep.tmdb_episode_id,
+      season_number: input.season_number,
+      episode_number: ep.episode_number,
+      watched_boolean: input.watched_boolean,
+      watch_date: watchDate,
+    });
+  }
+
+  let persistedTo: "supabase" | "wireframe-store" = "wireframe-store";
+  const { supabase, user } = await getAuthenticatedUser();
+
+  if (supabase && user) {
+    await supabase.from("media").upsert(
+      {
+        tmdb_id: input.tmdb_id,
+        title: input.title,
+        media_type: "tv",
+        poster_path: input.poster_path,
+      },
+      { onConflict: "tmdb_id" }
+    );
+
+    const rows = input.episodes.map((ep) => ({
+      user_id: user.id,
+      tmdb_id: input.tmdb_id,
+      tmdb_episode_id: ep.tmdb_episode_id,
+      season_number: input.season_number,
+      episode_number: ep.episode_number,
+      watched_boolean: input.watched_boolean,
+      watch_date: watchDate,
+    }));
+
+    const { error: epError } = await supabase.from("user_episodes").upsert(
+      rows,
+      { onConflict: "user_id,tmdb_episode_id" }
+    );
+
+    if (!epError) {
+      persistedTo = "supabase";
+    }
+  }
+
+  revalidatePath("/");
+  revalidatePath("/search");
+  revalidatePath("/calendar");
+  revalidatePath("/discover");
+
+  return {
+    ok: true,
+    season_number: input.season_number,
+    watched_boolean: input.watched_boolean,
+    watch_date: watchDate,
+    count: input.episodes.length,
     persistedTo,
   };
 }
@@ -684,6 +731,23 @@ export async function fetchTvSeasonsAction(
     }
   }
 
+  // Check store cache first to prevent redundant TMDB network calls
+  const cachedSeasons = store.seasonsByMedia.get(tmdbId);
+  if (cachedSeasons && cachedSeasons.length > 0) {
+    // Re-apply latest user watch status to cached episodes
+    return cachedSeasons.map((s) => ({
+      ...s,
+      episodes: s.episodes.map((ep) => {
+        const saved = episodeMap.get(ep.tmdb_episode_id);
+        return {
+          ...ep,
+          watched_boolean: saved?.watched_boolean ?? false,
+          watch_date: saved?.watch_date ?? null,
+        };
+      }),
+    }));
+  }
+
   try {
     const showRes = await fetch(buildTmdbUrl(`/tv/${tmdbId}`), {
       headers: getTmdbHeaders(),
@@ -692,16 +756,29 @@ export async function fetchTvSeasonsAction(
 
     if (showRes.ok) {
       const showData = (await showRes.json()) as {
-        seasons?: Array<{ season_number: number; name: string }>;
+        number_of_seasons?: number;
+        seasons?: Array<{
+          season_number: number;
+          name: string;
+          episode_count?: number;
+        }>;
       };
 
-      const validSeasons = (showData.seasons ?? [])
-        .filter((s) => s.season_number > 0);
+      const validSeasons = (showData.seasons ?? []).filter(
+        (s) => s.season_number > 0
+      );
 
       if (validSeasons.length > 0) {
-        // Fetch all seasons concurrently in parallel
-        const seasonResults = await Promise.all(
-          validSeasons.map(async (s) => {
+        // Fetch all seasons using a controlled concurrency pool of 4 parallel requests
+        const CONCURRENCY = 4;
+        const seasonResults: SeasonWireframeGroup[] = new Array(validSeasons.length);
+        let currentIndex = 0;
+
+        async function fetchWorker() {
+          while (currentIndex < validSeasons.length) {
+            const index = currentIndex++;
+            const s = validSeasons[index];
+
             try {
               const seasonRes = await fetch(
                 buildTmdbUrl(`/tv/${tmdbId}/season/${s.season_number}`),
@@ -711,55 +788,91 @@ export async function fetchTvSeasonsAction(
                 }
               );
 
-              if (!seasonRes.ok) return null;
+              if (seasonRes.ok) {
+                const seasonData = (await seasonRes.json()) as {
+                  episodes?: Array<{
+                    id: number;
+                    episode_number: number;
+                    name: string;
+                    air_date?: string | null;
+                  }>;
+                };
 
-              const seasonData = (await seasonRes.json()) as {
-                episodes?: Array<{
-                  id: number;
-                  episode_number: number;
-                  name: string;
-                  air_date?: string | null;
-                }>;
-              };
+                const episodes = (seasonData.episodes ?? []).map((ep) => {
+                  const saved = episodeMap.get(ep.id);
+                  return {
+                    tmdb_episode_id: ep.id,
+                    season_number: s.season_number,
+                    episode_number: ep.episode_number,
+                    title: ep.name || `Episode ${ep.episode_number}`,
+                    air_date: ep.air_date ?? null,
+                    watched_boolean: saved?.watched_boolean ?? false,
+                    watch_date: saved?.watch_date ?? null,
+                  };
+                });
 
-              const episodes = (seasonData.episodes ?? []).map((ep) => {
-                const saved = episodeMap.get(ep.id);
-                return {
-                  tmdb_episode_id: ep.id,
+                seasonResults[index] = {
                   season_number: s.season_number,
-                  episode_number: ep.episode_number,
-                  title: ep.name || `Episode ${ep.episode_number}`,
-                  air_date: ep.air_date ?? null,
+                  name: s.name || `Season ${s.season_number}`,
+                  episodes,
+                };
+                continue;
+              }
+            } catch {
+              // Season fetch failed / network glitch fallback
+            }
+
+            // Fallback synthesis for individual season if fetch failed
+            const epCount = s.episode_count || 4;
+            const fallbackEpisodes = Array.from(
+              { length: Math.min(epCount, 24) },
+              (_, i) => {
+                const epNum = i + 1;
+                const synId = tmdbId * 10000 + s.season_number * 100 + epNum;
+                const saved = episodeMap.get(synId);
+                return {
+                  tmdb_episode_id: synId,
+                  season_number: s.season_number,
+                  episode_number: epNum,
+                  title: `Episode ${epNum}`,
+                  air_date: null,
                   watched_boolean: saved?.watched_boolean ?? false,
                   watch_date: saved?.watch_date ?? null,
                 };
-              });
+              }
+            );
 
-              return {
-                season_number: s.season_number,
-                name: s.name || `Season ${s.season_number}`,
-                episodes,
-              };
-            } catch {
-              return null;
-            }
-          })
+            seasonResults[index] = {
+              season_number: s.season_number,
+              name: s.name || `Season ${s.season_number}`,
+              episodes: fallbackEpisodes,
+            };
+          }
+        }
+
+        const workers = Array.from(
+          { length: Math.min(CONCURRENCY, validSeasons.length) },
+          () => fetchWorker()
         );
+        await Promise.all(workers);
 
         const fetchedSeasons = seasonResults
-          .filter((s): s is SeasonWireframeGroup => s !== null)
+          .filter((s): s is SeasonWireframeGroup => s !== null && s.episodes.length > 0)
           .sort((a, b) => a.season_number - b.season_number);
 
         if (fetchedSeasons.length > 0) {
+          store.seasonsByMedia.set(tmdbId, fetchedSeasons);
           return fetchedSeasons;
         }
       }
     }
   } catch {
-    // Fallback to structural wireframe seasons
+    // Fallback to synthetic TV seasons if TMDB seasons fetch fails
   }
 
-  return buildDefaultSeasonsForTv(tmdbId, episodeMap);
+  const fallback = buildDefaultSeasonsForTv(tmdbId, episodeMap);
+  store.seasonsByMedia.set(tmdbId, fallback);
+  return fallback;
 }
 
 /**
@@ -783,6 +896,29 @@ export async function getMediaDetailAction(
   let updatedAt: string | null = existingUserMedia?.updated_at ?? null;
   let dataSource: "supabase" | "wireframe-store" = "wireframe-store";
 
+  let cachedMediaRow: {
+    media_type?: string;
+    title?: string;
+    poster_path?: string | null;
+    backdrop_path?: string | null;
+    release_date?: string | null;
+    next_air_date?: string | null;
+    next_episode_label?: string | null;
+    overview?: string | null;
+  } | null = null;
+
+  if (supabase) {
+    const { data: mediaRow } = await supabase
+      .from("media")
+      .select("media_type, title, poster_path, backdrop_path, release_date, next_air_date, next_episode_label, overview")
+      .eq("tmdb_id", tmdbId)
+      .maybeSingle();
+
+    if (mediaRow) {
+      cachedMediaRow = mediaRow;
+    }
+  }
+
   if (supabase && user) {
     dataSource = "supabase";
     const { data: userRow } = await supabase
@@ -799,39 +935,131 @@ export async function getMediaDetailAction(
     }
   }
 
-  // Determine media type: hint -> cached record -> probe TMDB
-  let mediaType: MediaType = mediaTypeHint || existingMedia?.media_type || "movie";
+  if (!userStatus && supabase) {
+    const { data: anyUserMedia } = await supabase
+      .from("user_media")
+      .select("status, rating")
+      .eq("tmdb_id", tmdbId)
+      .limit(1)
+      .maybeSingle();
+
+    if (anyUserMedia) {
+      if (!userStatus) userStatus = anyUserMedia.status as MediaStatus;
+      if (userRating === null && anyUserMedia.rating !== null) {
+        userRating = Number(anyUserMedia.rating);
+      }
+    }
+  }
+
+  let hasTvEpisodes = false;
+  if (store.userEpisodes) {
+    for (const ep of store.userEpisodes.values()) {
+      if (ep.tmdb_id === tmdbId) {
+        hasTvEpisodes = true;
+        break;
+      }
+    }
+  }
+
+  if (!hasTvEpisodes && supabase) {
+    const { count } = await supabase
+      .from("user_episodes")
+      .select("id", { count: "exact", head: true })
+      .eq("tmdb_id", tmdbId);
+
+    if (count && count > 0) {
+      hasTvEpisodes = true;
+    }
+  }
+
+  // Determine media type: hint -> cached DB record -> wireframe store -> episodes/status heuristic -> default movie
+  let mediaType: MediaType =
+    mediaTypeHint ||
+    (cachedMediaRow?.media_type as MediaType) ||
+    existingMedia?.media_type ||
+    (hasTvEpisodes || userStatus === "watching" ? "tv" : "movie");
 
   // Try fetching TMDB details for backdrop, high-res poster, full synopsis, release date
-  let title = existingMedia?.title || `Media #${tmdbId}`;
-  let posterPath = existingMedia?.poster_path ?? null;
-  let backdropPath = existingMedia?.backdrop_path ?? null;
-  let releaseDate = existingMedia?.release_date ?? null;
-  let nextAirDate = existingMedia?.next_air_date ?? null;
-  let nextEpisodeLabel = existingMedia?.next_episode_label ?? null;
-  let overview = existingMedia?.overview ?? null;
+  let title = cachedMediaRow?.title || existingMedia?.title || `Media #${tmdbId}`;
+  let posterPath = cachedMediaRow?.poster_path ?? existingMedia?.poster_path ?? null;
+  let backdropPath = cachedMediaRow?.backdrop_path ?? existingMedia?.backdrop_path ?? null;
+  let releaseDate = cachedMediaRow?.release_date ?? existingMedia?.release_date ?? null;
+  let nextAirDate = cachedMediaRow?.next_air_date ?? existingMedia?.next_air_date ?? null;
+  let nextEpisodeLabel = cachedMediaRow?.next_episode_label ?? existingMedia?.next_episode_label ?? null;
+  let overview = cachedMediaRow?.overview ?? existingMedia?.overview ?? null;
   let tmdbRating = existingMedia?.tmdb_rating ?? null;
+  let numberOfSeasons: number | undefined = existingMedia?.number_of_seasons;
+  let numberOfEpisodes: number | undefined = existingMedia?.number_of_episodes;
+  let seriesStatus: string | undefined = existingMedia?.series_status;
+  let lastEpisodeToAir: {
+    season_number: number;
+    episode_number: number;
+    name?: string;
+    air_date?: string | null;
+  } | null = existingMedia?.last_episode_to_air ?? null;
+  let nextEpisodeToAir: {
+    season_number: number;
+    episode_number: number;
+    name?: string;
+    air_date?: string | null;
+  } | null = existingMedia?.next_episode_to_air ?? null;
 
   try {
-    let res = await fetch(buildTmdbUrl(`/${mediaType}/${tmdbId}`), {
-      headers: getTmdbHeaders(),
-      cache: "no-store",
-    });
+    let res: Response | null = null;
+    let data: TmdbDetailPayload | null = null;
 
-    if (!res.ok && !mediaTypeHint && !existingMedia) {
-      const otherType: MediaType = mediaType === "movie" ? "tv" : "movie";
-      const otherRes = await fetch(buildTmdbUrl(`/${otherType}/${tmdbId}`), {
+    if (!mediaTypeHint && !cachedMediaRow && !existingMedia) {
+      // Concurrently probe both TV and Movie to resolve any TMDB ID collision
+      const [tvRes, movieRes] = await Promise.all([
+        fetch(buildTmdbUrl(`/tv/${tmdbId}`), { headers: getTmdbHeaders(), cache: "no-store" }),
+        fetch(buildTmdbUrl(`/movie/${tmdbId}`), { headers: getTmdbHeaders(), cache: "no-store" }),
+      ]);
+
+      if (tvRes.ok && !movieRes.ok) {
+        res = tvRes;
+        mediaType = "tv";
+      } else if (!tvRes.ok && movieRes.ok) {
+        res = movieRes;
+        mediaType = "movie";
+      } else if (tvRes.ok && movieRes.ok) {
+        // Both exist (ID collision, e.g. 61833)! Compare popularity & vote counts
+        const tvData = await tvRes.json();
+        const movieData = await movieRes.json();
+        const tvPop = (tvData.vote_count || 0) * 10 + (tvData.popularity || 0);
+        const moviePop = (movieData.vote_count || 0) * 10 + (movieData.popularity || 0);
+
+        if (tvPop >= moviePop || userStatus === "watching" || hasTvEpisodes) {
+          data = tvData;
+          mediaType = "tv";
+        } else {
+          data = movieData;
+          mediaType = "movie";
+        }
+      }
+    } else {
+      res = await fetch(buildTmdbUrl(`/${mediaType}/${tmdbId}`), {
         headers: getTmdbHeaders(),
         cache: "no-store",
       });
-      if (otherRes.ok) {
-        res = otherRes;
-        mediaType = otherType;
+
+      if (!res.ok && !mediaTypeHint && !existingMedia) {
+        const otherType: MediaType = mediaType === "movie" ? "tv" : "movie";
+        const otherRes = await fetch(buildTmdbUrl(`/${otherType}/${tmdbId}`), {
+          headers: getTmdbHeaders(),
+          cache: "no-store",
+        });
+        if (otherRes.ok) {
+          res = otherRes;
+          mediaType = otherType;
+        }
       }
     }
 
-    if (res.ok) {
-      const data = await res.json();
+    if (res && res.ok && !data) {
+      data = await res.json();
+    }
+
+    if (data) {
       title = data.title || data.name || title;
       posterPath = data.poster_path ?? posterPath;
       backdropPath = data.backdrop_path ?? backdropPath;
@@ -840,15 +1068,40 @@ export async function getMediaDetailAction(
       if (typeof data.vote_average === "number") {
         tmdbRating = Math.round(data.vote_average * 10) / 10;
       }
+
       if (mediaType === "tv") {
+        numberOfSeasons = typeof data.number_of_seasons === "number" ? data.number_of_seasons : undefined;
+        numberOfEpisodes = typeof data.number_of_episodes === "number" ? data.number_of_episodes : undefined;
+        seriesStatus = data.status || undefined;
+
+        if (data.last_episode_to_air) {
+          lastEpisodeToAir = {
+            season_number: data.last_episode_to_air.season_number,
+            episode_number: data.last_episode_to_air.episode_number,
+            name: data.last_episode_to_air.name,
+            air_date: data.last_episode_to_air.air_date ?? null,
+          };
+        }
+
         if (data.next_episode_to_air) {
-          nextAirDate = data.next_episode_to_air.air_date ?? nextAirDate;
+          nextAirDate = data.next_episode_to_air.air_date ?? null;
           nextEpisodeLabel = `S${String(data.next_episode_to_air.season_number).padStart(2, "0")}E${String(data.next_episode_to_air.episode_number).padStart(2, "0")} — ${data.next_episode_to_air.name || "TBA"}`;
+          nextEpisodeToAir = {
+            season_number: data.next_episode_to_air.season_number,
+            episode_number: data.next_episode_to_air.episode_number,
+            name: data.next_episode_to_air.name,
+            air_date: data.next_episode_to_air.air_date ?? null,
+          };
+        } else {
+          // Explicitly clear: show has no upcoming live episode scheduled
+          nextAirDate = null;
+          nextEpisodeLabel = null;
+          nextEpisodeToAir = null;
         }
       }
     }
-  } catch (err) {
-    console.error("[KO-AX] TMDB fetch error in getMediaDetailAction:", err);
+  } catch {
+    // TMDB detail fetch failed; fallback to local cached data
   }
 
   // If TV, fetch full season and episode breakdown
@@ -856,9 +1109,28 @@ export async function getMediaDetailAction(
   if (mediaType === "tv") {
     seasons = await fetchTvSeasonsAction(tmdbId);
     if (!seasons || seasons.length === 0) {
-      seasons = buildDefaultSeasonsForTv(tmdbId, store.userEpisodes);
+      seasons = buildDefaultSeasonsForTv(tmdbId, store.userEpisodes, numberOfSeasons || 2);
     }
   }
+
+  // Cache resolved record into wireframe store for instant re-lookup
+  store.media.set(tmdbId, {
+    tmdb_id: tmdbId,
+    title,
+    media_type: mediaType,
+    poster_path: posterPath,
+    backdrop_path: backdropPath,
+    release_date: releaseDate,
+    next_air_date: nextAirDate,
+    next_episode_label: nextEpisodeLabel,
+    overview,
+    tmdb_rating: tmdbRating,
+    number_of_seasons: numberOfSeasons,
+    number_of_episodes: numberOfEpisodes,
+    series_status: seriesStatus,
+    last_episode_to_air: lastEpisodeToAir,
+    next_episode_to_air: nextEpisodeToAir,
+  });
 
   const mediaItem: MergedMediaItem = {
     tmdb_id: tmdbId,
@@ -874,6 +1146,11 @@ export async function getMediaDetailAction(
     rating: userRating,
     updated_at: updatedAt,
     tmdb_rating: tmdbRating,
+    number_of_seasons: numberOfSeasons,
+    number_of_episodes: numberOfEpisodes,
+    series_status: seriesStatus,
+    last_episode_to_air: lastEpisodeToAir,
+    next_episode_to_air: nextEpisodeToAir,
     seasons,
   };
 
@@ -883,17 +1160,6 @@ export async function getMediaDetailAction(
 // ============================================================================
 // DELIVERABLE 2: WHAT TO WATCH NEXT DISCOVERY ENGINE
 // ============================================================================
-
-interface RawTmdbRecommendation {
-  tmdb_id: number;
-  title: string;
-  media_type: MediaType;
-  poster_path: string | null;
-  release_date: string | null;
-  overview: string | null;
-  genre_ids: number[];
-  tmdb_rating?: number | null;
-}
 
 /**
  * Queries TMDB recommendations for a given seed with automatic fallback
@@ -1036,17 +1302,6 @@ function matchesEra(dateStr: string | null | undefined, eraKey?: string): boolea
   return true;
 }
 
-interface DiscoveredFallbackItem {
-  id: number;
-  title: string;
-  media_type: MediaType;
-  poster_path: string | null;
-  release_date: string | null;
-  overview: string | null;
-  genre_ids: number[];
-  tmdb_rating: number | null;
-}
-
 async function fetchTmdbDiscoverFallback(
   type: MediaType,
   eraKey: string,
@@ -1142,14 +1397,14 @@ export async function getDiscoveryRecommendationsAction(params: {
 
     if (supabase && user) {
       try {
-        const { data: rows, error } = await supabase
+        const { data: rows } = await supabase
           .from("user_media")
           .select("tmdb_id, rating, media:tmdb_id (media_type)")
           .eq("user_id", user.id)
           .not("rating", "is", null)
           .order("rating", { ascending: false });
 
-        if (!error && rows) {
+        if (rows) {
           const eightsAndAbove: number[] = [];
           const allRated: number[] = [];
 

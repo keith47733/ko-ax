@@ -1,14 +1,8 @@
 import React, { Suspense } from "react";
 import type { Metadata } from "next";
-import { Playfair_Display, Inter, IBM_Plex_Mono } from "next/font/google";
+import { Inter, IBM_Plex_Mono } from "next/font/google";
 import AppHeader from "@/components/AppHeader";
 import "./globals.css";
-
-const playfair = Playfair_Display({
-  subsets: ["latin"],
-  display: "swap",
-  variable: "--font-playfair",
-});
 
 const inter = Inter({
   subsets: ["latin"],
@@ -24,8 +18,8 @@ const ibmPlexMono = IBM_Plex_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "KO-AX Personal Media Engine",
-  description: "Modern Apothecary / Archival Minimalist Personal Media Engine",
+  title: "Kura | Personal Media Storehouse",
+  description: "Japandi Minimalist Personal Media Storehouse",
 };
 
 export default function RootLayout({
@@ -36,10 +30,10 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${playfair.variable} ${inter.variable} ${ibmPlexMono.variable}`}
+      className={`${inter.variable} ${ibmPlexMono.variable}`}
     >
       <body
-        className={`${playfair.variable} ${inter.variable} ${ibmPlexMono.variable} min-h-screen bg-stone-100 text-stone-900 font-sans antialiased flex flex-col`}
+        className={`${inter.variable} ${ibmPlexMono.variable} min-h-screen bg-[#F4F3F0] text-zinc-800 font-sans antialiased flex flex-col`}
       >
         <Suspense fallback={null}>
           <AppHeader />

@@ -2,12 +2,14 @@
 
 import React, { useState, useMemo } from "react";
 import MediaCard from "@/components/MediaCard";
-import { MEDIA_GRID_CLASS, MergedMediaItem, MediaType } from "@/lib/types";
-
-interface SearchResultsPaneProps {
-  query: string;
-  initialItems: MergedMediaItem[];
-}
+import {
+  FilterSidebar,
+  FilterSidebarHeader,
+  FilterSection,
+  FilterSearchInput,
+  SegmentedControl,
+} from "@/components/FilterSidebar";
+import { MEDIA_GRID_CLASS, MergedMediaItem, MediaType, SearchResultsPaneProps } from "@/types";
 
 export default function SearchResultsPane({
   query,
@@ -90,219 +92,121 @@ export default function SearchResultsPane({
   ]);
 
   return (
-    <div className="space-y-6">
-      {/* Search Hero Header with 1-Tap Chip Toggles */}
-      <section className="border border-stone-300 rounded-md bg-stone-50 p-3 sm:p-4 shadow-sm">
+    <div className="flex flex-col lg:flex-row gap-5 sm:gap-6 items-start w-full">
+      {/* =====================================================================
+          LEFT (20%) FRAME: Search Filter Sidebar Console
+          ===================================================================== */}
+      <FilterSidebar>
+        {/* Frame Header with View Title & Count */}
+        <FilterSidebarHeader
+          title="SEARCH RESULTS"
+          count={filteredAndSortedItems.length}
+        />
+
+        {/* Query Status Callout */}
+        {query ? (
+          <div className="p-3 bg-[#F4F3F0] rounded-xl flex items-center justify-between gap-2">
+            <span className="text-[11px] font-mono font-bold text-zinc-500 uppercase tracking-wider">
+              QUERY:
+            </span>
+            <span className="text-xs font-mono font-black text-zinc-900 truncate">
+              &ldquo;{query}&rdquo;
+            </span>
+          </div>
+        ) : (
+          <div className="p-3 bg-[#F4F3F0] rounded-xl text-center">
+            <span className="text-[11px] font-mono font-bold text-zinc-500 uppercase tracking-wider">
+              NO ACTIVE QUERY
+            </span>
+          </div>
+        )}
+
+        {/* 1. Title Filter Input */}
         <div>
-          <span className="text-[10px] sm:text-xs uppercase font-mono font-medium text-stone-500 block">
-            GLOBAL SEARCH
-          </span>
-          <h1 className="text-lg sm:text-xl font-serif font-bold text-stone-900 tracking-tight">
-            {query
-              ? `Results for "${query}" (${filteredAndSortedItems.length})`
-              : `Search Results (${filteredAndSortedItems.length})`}
-          </h1>
+          <FilterSearchInput
+            id="search-title-filter"
+            value={localTitleFilter}
+            onChange={(e) => setLocalTitleFilter(e.target.value)}
+            placeholder="FILTER RESULTS..."
+          />
         </div>
 
-        {/* 1-Tap Chip Toggles Bar */}
-        <div className="pt-2.5 flex flex-wrap items-center gap-2.5 sm:gap-3 text-xs">
-          {/* 1. Title Filter Input */}
-          <div className="w-full sm:w-48 md:w-56 shrink-0">
-            <input
-              id="search-title-filter"
-              type="text"
-              value={localTitleFilter}
-              onChange={(e) => setLocalTitleFilter(e.target.value)}
-              placeholder="FILTER RESULTS..."
-              className="w-full h-8 sm:h-8.5 border border-stone-300 rounded-md px-2.5 bg-stone-50 text-stone-900 text-xs font-sans focus:outline-none focus:border-stone-500 placeholder:text-stone-400"
-            />
-          </div>
+        {/* 2. Media Type Chip Toggle */}
+        <FilterSection label="MEDIA TYPE">
+          <SegmentedControl
+            value={mediaTypeFilter}
+            onChange={setMediaTypeFilter}
+            options={[
+              { value: "all", label: "ALL" },
+              { value: "movie", label: "MOVIES" },
+              { value: "tv", label: "TV" },
+            ]}
+          />
+        </FilterSection>
 
-          {/* 2. Media Type Chip Toggle */}
-          <div className="flex items-center gap-1.5">
-            <span className="font-mono text-[10px] font-medium text-stone-500 uppercase shrink-0">
-              MEDIA:
-            </span>
-            <div className="inline-flex border border-stone-300 divide-x divide-stone-300 rounded-md overflow-hidden text-[10px] sm:text-[11px] font-mono font-medium uppercase shadow-sm bg-stone-50">
-              <button
-                type="button"
-                onClick={() => setMediaTypeFilter("all")}
-                className={`px-2.5 py-1 transition-colors cursor-pointer ${
-                  mediaTypeFilter === "all"
-                    ? "bg-stone-800 text-white"
-                    : "bg-stone-50 text-stone-600 hover:bg-stone-100"
-                }`}
-              >
-                ALL
-              </button>
-              <button
-                type="button"
-                onClick={() => setMediaTypeFilter("movie")}
-                className={`px-2.5 py-1 transition-colors cursor-pointer ${
-                  mediaTypeFilter === "movie"
-                    ? "bg-stone-800 text-white"
-                    : "bg-stone-50 text-stone-600 hover:bg-stone-100"
-                }`}
-              >
-                MOVIES
-              </button>
-              <button
-                type="button"
-                onClick={() => setMediaTypeFilter("tv")}
-                className={`px-2.5 py-1 transition-colors cursor-pointer ${
-                  mediaTypeFilter === "tv"
-                    ? "bg-stone-800 text-white"
-                    : "bg-stone-50 text-stone-600 hover:bg-stone-100"
-                }`}
-              >
-                TV
-              </button>
-            </div>
-          </div>
+        {/* 3. Library Status Chip Toggle */}
+        <FilterSection label="LIBRARY STATUS">
+          <SegmentedControl
+            value={libraryStatusFilter}
+            onChange={setLibraryStatusFilter}
+            options={[
+              { value: "all", label: "ALL" },
+              { value: "tracked", label: "IN LIB" },
+              { value: "untracked", label: "NEW" },
+            ]}
+          />
+        </FilterSection>
 
-          {/* 3. Library Status Chip Toggle */}
-          <div className="flex items-center gap-1.5">
-            <span className="font-mono text-[10px] font-medium text-stone-500 uppercase shrink-0">
-              STATUS:
-            </span>
-            <div className="inline-flex border border-stone-300 divide-x divide-stone-300 rounded-md overflow-hidden text-[10px] sm:text-[11px] font-mono font-medium uppercase shadow-sm bg-stone-50">
-              <button
-                type="button"
-                onClick={() => setLibraryStatusFilter("all")}
-                className={`px-2.5 py-1 transition-colors cursor-pointer ${
-                  libraryStatusFilter === "all"
-                    ? "bg-stone-800 text-white"
-                    : "bg-stone-50 text-stone-600 hover:bg-stone-100"
-                }`}
-              >
-                ALL
-              </button>
-              <button
-                type="button"
-                onClick={() => setLibraryStatusFilter("tracked")}
-                className={`px-2.5 py-1 transition-colors cursor-pointer ${
-                  libraryStatusFilter === "tracked"
-                    ? "bg-stone-800 text-white"
-                    : "bg-stone-50 text-stone-600 hover:bg-stone-100"
-                }`}
-              >
-                IN LIBRARY
-              </button>
-              <button
-                type="button"
-                onClick={() => setLibraryStatusFilter("untracked")}
-                className={`px-2.5 py-1 transition-colors cursor-pointer ${
-                  libraryStatusFilter === "untracked"
-                    ? "bg-stone-800 text-white"
-                    : "bg-stone-50 text-stone-600 hover:bg-stone-100"
-                }`}
-              >
-                NEW / UNTRACKED
-              </button>
-            </div>
-          </div>
+        {/* 4. Sort By Field Chip Toggle */}
+        <FilterSection label="SORT FIELD">
+          <SegmentedControl
+            value={sortBy}
+            onChange={setSortBy}
+            options={[
+              { value: "relevance", label: "RELEVANCE" },
+              { value: "release_date", label: "DATE" },
+              { value: "title", label: "TITLE" },
+            ]}
+          />
+        </FilterSection>
 
-          {/* 4. Sort By Field Chip Toggle */}
-          <div className="flex items-center gap-1.5">
-            <span className="font-mono text-[10px] font-medium text-stone-500 uppercase shrink-0">
-              SORT:
-            </span>
-            <div className="inline-flex border border-stone-300 divide-x divide-stone-300 rounded-md overflow-hidden text-[10px] sm:text-[11px] font-mono font-medium uppercase shadow-sm bg-stone-50">
-              <button
-                type="button"
-                onClick={() => setSortBy("relevance")}
-                className={`px-2.5 py-1 transition-colors cursor-pointer ${
-                  sortBy === "relevance"
-                    ? "bg-stone-800 text-white"
-                    : "bg-stone-50 text-stone-600 hover:bg-stone-100"
-                }`}
-              >
-                RELEVANCE
-              </button>
-              <button
-                type="button"
-                onClick={() => setSortBy("release_date")}
-                className={`px-2.5 py-1 transition-colors cursor-pointer ${
-                  sortBy === "release_date"
-                    ? "bg-stone-800 text-white"
-                    : "bg-stone-50 text-stone-600 hover:bg-stone-100"
-                }`}
-              >
-                DATE
-              </button>
-              <button
-                type="button"
-                onClick={() => setSortBy("title")}
-                className={`px-2.5 py-1 transition-colors cursor-pointer ${
-                  sortBy === "title"
-                    ? "bg-stone-800 text-white"
-                    : "bg-stone-50 text-stone-600 hover:bg-stone-100"
-                }`}
-              >
-                TITLE
-              </button>
-            </div>
-          </div>
+        {/* 5. Sort Direction Toggle */}
+        <FilterSection label="SORT ORDER">
+          <SegmentedControl
+            value={sortOrder}
+            onChange={setSortOrder}
+            options={[
+              { value: "desc", label: "DESC ↓" },
+              { value: "asc", label: "ASC ↑" },
+            ]}
+          />
+        </FilterSection>
+      </FilterSidebar>
 
-          {/* 5. Sort Direction Toggle */}
-          <div className="flex items-center gap-1.5">
-            <span className="font-mono text-[10px] font-medium text-stone-500 uppercase shrink-0">
-              DIR:
-            </span>
-            <div className="inline-flex border border-stone-300 divide-x divide-stone-300 rounded-md overflow-hidden text-[10px] sm:text-[11px] font-mono font-medium uppercase shadow-sm bg-stone-50">
-              <button
-                type="button"
-                onClick={() => setSortOrder("desc")}
-                title="Descending (Latest/Highest first)"
-                className={`px-2.5 py-1 transition-colors cursor-pointer ${
-                  sortOrder === "desc"
-                    ? "bg-stone-800 text-white"
-                    : "bg-stone-50 text-stone-600 hover:bg-stone-100"
-                }`}
-              >
-                DESC ↓
-              </button>
-              <button
-                type="button"
-                onClick={() => setSortOrder("asc")}
-                title="Ascending (Earliest/Lowest first)"
-                className={`px-2.5 py-1 transition-colors cursor-pointer ${
-                  sortOrder === "asc"
-                    ? "bg-stone-800 text-white"
-                    : "bg-stone-50 text-stone-600 hover:bg-stone-100"
-                }`}
-              >
-                ASC ↑
-              </button>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* Results Grid / Empty States */}
-      {!query ? (
-        <section className="border border-stone-300 rounded-md bg-stone-50 p-8 text-center text-xs font-mono text-stone-600 shadow-sm">
-          TYPE A MOVIE OR TV SHOW TITLE IN THE HEADER SEARCH BAR AND PRESS ENTER.
-        </section>
-      ) : filteredAndSortedItems.length === 0 ? (
-        <section className="border border-stone-300 rounded-md bg-stone-50 p-8 text-center text-xs font-mono text-stone-600 shadow-sm">
-          {items.length === 0
-            ? `NO TMDB MEDIA RESULTS FOUND FOR "${query}".`
-            : `NO RESULTS MATCH THE CURRENT FILTERS.`}
-        </section>
-      ) : (
-        <section>
-          <div className={MEDIA_GRID_CLASS}>
-            {filteredAndSortedItems.map((mergedItem) => (
+      {/* =====================================================================
+          RIGHT (80%) FRAME: Responsive Poster Grid / Fallbacks
+          ===================================================================== */}
+      <main className="flex-1 w-full min-w-0">
+        {query.length === 0 ? (
+          <section className="rounded-2xl bg-white p-8 sm:p-12 text-center text-xs sm:text-sm font-mono text-zinc-500 shadow-[0_8px_30px_rgb(0,0,0,0.04)] ring-1 ring-black/5">
+            [ TYPE A TITLE OR ACTOR IN THE TOP SEARCH BAR TO QUERY TMDB REPOSITORY ]
+          </section>
+        ) : filteredAndSortedItems.length === 0 ? (
+          <section className="rounded-2xl bg-white p-8 sm:p-12 text-center text-xs sm:text-sm font-mono text-zinc-500 shadow-[0_8px_30px_rgb(0,0,0,0.04)] ring-1 ring-black/5">
+            [ ZERO TMDB / LIBRARY MATCHES RESOLVED FOR &quot;{query}&quot; WITH CURRENT FILTERS ]
+          </section>
+        ) : (
+          <section className={MEDIA_GRID_CLASS}>
+            {filteredAndSortedItems.map((item) => (
               <MediaCard
-                key={mergedItem.tmdb_id}
-                media={mergedItem}
+                key={`${item.media_type}-${item.tmdb_id}`}
+                media={item}
                 onStateChange={handleMediaStateChange}
               />
             ))}
-          </div>
-        </section>
-      )}
+          </section>
+        )}
+      </main>
     </div>
   );
 }

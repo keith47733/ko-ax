@@ -13,21 +13,21 @@ import { getDiscoveryRecommendationsAction } from "@/app/actions/media";
 import { FilmIcon, TvIcon } from "@/components/Icons";
 import MediaCard from "@/components/MediaCard";
 import {
+  FilterSearchInput,
+  FilterSection,
+  FilterSidebar,
+  FilterSidebarHeader,
+  SegmentedControl,
+} from "@/components/FilterSidebar";
+import {
   DISCOVERY_ERAS,
   DISCOVERY_GENRES,
   DiscoveryEngineResult,
+  DiscoveryViewProps,
   MEDIA_GRID_CLASS,
   MediaType,
   MergedMediaItem,
-} from "@/lib/types";
-
-interface DiscoveryViewProps {
-  initialData: DiscoveryEngineResult;
-  initialMediaType?: MediaType;
-  seedId?: number;
-  initialGenre?: string;
-  initialDecade?: string;
-}
+} from "@/types";
 
 export default function DiscoveryView({
   initialData,
@@ -256,54 +256,48 @@ export default function DiscoveryView({
   return (
     <div className="flex flex-col lg:flex-row gap-5 sm:gap-6 items-start w-full">
       {/* =========================================================================
-          LEFT (20%) FRAME: Archival Discovery Filter Console
+          LEFT (20%) FRAME: High-Pop Minimalist Discovery Filter Console
           ========================================================================= */}
-      <aside className="w-full lg:w-72 shrink-0 border border-stone-300 rounded-md bg-stone-50 p-4 shadow-sm space-y-4">
+      <FilterSidebar>
         {/* Frame Header with View Title & Count */}
-        <div className="border-b border-stone-200 pb-3 flex items-center justify-between gap-2">
-          <h2 className="font-serif text-sm sm:text-base font-bold text-stone-900 tracking-tight truncate">
-            DISCOVER RADAR
-          </h2>
-          <span className="text-xs font-mono font-medium px-2 py-0.5 rounded border border-stone-300 shrink-0 bg-stone-200 text-stone-700">
-            [{filteredItems.length}]
-          </span>
-        </div>
+        <FilterSidebarHeader
+          title="DISCOVER RADAR"
+          count={filteredItems.length}
+        />
 
         {/* 1. Engine Switcher: Movies vs TV Shows */}
-        <div className="grid grid-cols-2 border border-stone-300 divide-x divide-stone-300 rounded-md overflow-hidden text-xs sm:text-sm font-mono uppercase bg-stone-50 shadow-sm">
-          <button
-            type="button"
-            onClick={() => handleTypeSwitch("movie")}
-            className={`py-2.5 px-2 flex items-center justify-center gap-1.5 transition-colors cursor-pointer ${
-              mediaType === "movie"
-                ? "bg-stone-800 text-white font-medium"
-                : "bg-stone-50 text-stone-600 hover:bg-stone-100"
-            }`}
-          >
-            <FilmIcon className="w-4 h-4 shrink-0" />
-            <span>MOVIES</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => handleTypeSwitch("tv")}
-            className={`py-2.5 px-2 flex items-center justify-center gap-1.5 transition-colors cursor-pointer ${
-              mediaType === "tv"
-                ? "bg-stone-800 text-white font-medium"
-                : "bg-stone-50 text-stone-600 hover:bg-stone-100"
-            }`}
-          >
-            <TvIcon className="w-4 h-4 shrink-0" />
-            <span>TV SHOWS</span>
-          </button>
-        </div>
+        <SegmentedControl
+          value={mediaType}
+          onChange={(val) => handleTypeSwitch(val)}
+          options={[
+            {
+              value: "movie",
+              label: (
+                <span className="flex items-center justify-center gap-1.5 font-bold">
+                  <FilmIcon className="w-4.5 h-4.5 shrink-0" />
+                  <span>MOVIES</span>
+                </span>
+              ),
+            },
+            {
+              value: "tv",
+              label: (
+                <span className="flex items-center justify-center gap-1.5 font-bold">
+                  <TvIcon className="w-4.5 h-4.5 shrink-0" />
+                  <span>TV SHOWS</span>
+                </span>
+              ),
+            },
+          ]}
+        />
 
         {/* 2. Seed Block ("Similar to {Title}" + "I'M FEELING LUCKY" text button) */}
-        <div className="p-3 border border-stone-300 bg-stone-100/70 rounded-md space-y-1.5 shadow-sm">
-          <span className="text-[10px] font-mono uppercase font-medium text-stone-500 block leading-none">
+        <div className="p-4 bg-[#F4F3F0] rounded-2xl space-y-2">
+          <span className="text-xs font-mono uppercase font-bold text-zinc-600 block leading-none">
             RECOMMENDATIONS:
           </span>
           <div className="flex items-baseline justify-between gap-1.5">
-            <span className="font-serif text-xs sm:text-sm font-semibold tracking-tight text-stone-900 truncate">
+            <span className="font-sans text-xs sm:text-sm font-bold tracking-tight text-zinc-950 truncate">
               SIMILAR TO{" "}
               {activeSeed?.title ||
                 (mediaType === "movie" ? "TOP MOVIES" : "TOP SHOWS")}
@@ -312,7 +306,7 @@ export default function DiscoveryView({
               <button
                 type="button"
                 onClick={handleResetAutoPilot}
-                className="text-[10px] font-mono font-medium text-stone-500 hover:text-stone-900 underline cursor-pointer shrink-0"
+                className="text-xs font-mono font-bold text-zinc-600 hover:text-zinc-950 underline cursor-pointer shrink-0"
                 title="Switch back to top-rated auto-pilot"
               >
                 RESET ✕
@@ -323,7 +317,7 @@ export default function DiscoveryView({
             type="button"
             onClick={handleShuffleSeed}
             disabled={isPending}
-            className="text-[10px] font-mono font-medium uppercase text-orange-700 hover:text-orange-800 underline flex items-center gap-1 cursor-pointer pt-0.5 transition-colors"
+            className="text-xs font-mono font-black uppercase text-[#FF7A50] hover:brightness-90 underline flex items-center gap-1 cursor-pointer pt-0.5 transition-colors"
             title="Pick another random 8+ rated title to seed recommendations"
           >
             <span>➔ I&apos;M FEELING LUCKY (NEW SEED)</span>
@@ -332,21 +326,16 @@ export default function DiscoveryView({
 
         {/* 3. Filter by Title */}
         <div>
-          <input
+          <FilterSearchInput
             id="discovery-title-filter"
-            type="text"
             value={localTitleFilter}
             onChange={(e) => setLocalTitleFilter(e.target.value)}
             placeholder={`FILTER ${mediaType === "movie" ? "MOVIES" : "SHOWS"}...`}
-            className="w-full h-9 border border-stone-300 rounded-md px-2.5 bg-stone-50 text-stone-900 text-xs sm:text-sm font-sans focus:outline-none focus:border-stone-500 placeholder:text-stone-400"
           />
         </div>
 
         {/* 4. Release Era Filter */}
-        <div className="space-y-1">
-          <span className="block text-[10px] font-mono font-medium uppercase text-stone-500 tracking-wider">
-            RELEASE ERA
-          </span>
+        <FilterSection label="RELEASE ERA">
           <div className="grid grid-cols-2 gap-1.5 text-xs sm:text-sm font-mono uppercase">
             {DISCOVERY_ERAS.map((era) => {
               const isActive = selectedDecade === era.key;
@@ -356,10 +345,10 @@ export default function DiscoveryView({
                   type="button"
                   onClick={() => handleDecadeChange(era.key)}
                   disabled={isPending}
-                  className={`py-2 px-2 border rounded-md transition-colors cursor-pointer text-center truncate ${
+                  className={`py-2 px-2 rounded-xl transition-all cursor-pointer text-center truncate font-bold ${
                     isActive
-                      ? "bg-stone-800 text-white border-stone-800 font-medium shadow-sm"
-                      : "bg-stone-50 text-stone-700 hover:bg-stone-100 border-stone-300"
+                      ? "bg-zinc-800 hover:bg-zinc-700 text-white shadow-sm"
+                      : "bg-[#F4F3F0] text-zinc-600 hover:bg-zinc-200 font-medium"
                   }`}
                 >
                   {era.label}
@@ -367,14 +356,11 @@ export default function DiscoveryView({
               );
             })}
           </div>
-        </div>
+        </FilterSection>
 
         {/* 5. Genre Filter */}
-        <div className="space-y-1">
-          <span className="block text-[10px] font-mono font-medium uppercase text-stone-500 tracking-wider">
-            GENRE
-          </span>
-          <div className="grid grid-cols-2 gap-1.5 text-xs font-mono uppercase">
+        <FilterSection label="GENRE">
+          <div className="grid grid-cols-2 gap-1.5 text-xs sm:text-sm font-mono uppercase">
             {DISCOVERY_GENRES.map((g) => {
               const isActive = selectedGenre === g.key;
               return (
@@ -383,10 +369,10 @@ export default function DiscoveryView({
                   type="button"
                   onClick={() => handleGenreChange(g.key)}
                   disabled={isPending}
-                  className={`py-2 px-1.5 border rounded-md transition-colors cursor-pointer text-center truncate ${
+                  className={`py-2 px-1.5 rounded-xl transition-all cursor-pointer text-center truncate font-bold ${
                     isActive
-                      ? "bg-stone-800 text-white border-stone-800 font-medium shadow-sm"
-                      : "bg-stone-50 text-stone-700 hover:bg-stone-100 border-stone-300"
+                      ? "bg-zinc-800 hover:bg-zinc-700 text-white shadow-sm"
+                      : "bg-[#F4F3F0] text-zinc-600 hover:bg-zinc-200 font-medium"
                   }`}
                 >
                   {g.label}
@@ -394,41 +380,41 @@ export default function DiscoveryView({
               );
             })}
           </div>
-        </div>
-      </aside>
+        </FilterSection>
+      </FilterSidebar>
 
       {/* =========================================================================
           RIGHT (80%) FRAME: Responsive Poster Grid / Empty State
           ========================================================================= */}
       <div className="flex-1 min-w-0 w-full space-y-4">
         {data.noRatedMedia && !activeSeed ? (
-          <section className="border border-stone-300 rounded-md bg-stone-50 p-8 sm:p-12 text-center space-y-4 shadow-sm">
-            <div className="font-mono text-xs text-stone-500 uppercase font-medium tracking-widest">
+          <section className="rounded-2xl bg-white p-8 sm:p-12 text-center space-y-4 shadow-[0_8px_30px_rgb(0,0,0,0.04)] ring-1 ring-black/5">
+            <div className="font-mono text-xs text-zinc-700 uppercase font-bold tracking-widest">
               [ RECOMMENDATION RADAR STANDBY ]
             </div>
-            <h2 className="font-serif text-2xl sm:text-3xl text-stone-900 font-bold tracking-tight">
+            <h2 className="font-sans text-2xl sm:text-3xl text-zinc-950 font-bold tracking-tight">
               No Rated {mediaType === "movie" ? "Movies" : "TV Shows"} in Your
               Library
             </h2>
-            <p className="max-w-md mx-auto text-xs sm:text-sm font-sans text-stone-600 leading-relaxed">
+            <p className="max-w-md mx-auto text-xs sm:text-sm font-sans text-zinc-700 leading-relaxed font-medium">
               Rate some {mediaType === "movie" ? "movies" : "TV shows"} in your
               library to start getting personalized recommendations.
             </p>
             <div className="pt-2">
               <Link
                 href="/search"
-                className="inline-flex items-center gap-2 px-5 py-2.5 bg-orange-700 hover:bg-orange-800 text-white font-sans text-xs uppercase tracking-wider font-medium rounded-md shadow-sm transition-colors cursor-pointer"
+                className="inline-flex items-center gap-2 px-6 py-3 bg-[#FF7A50] hover:brightness-95 text-zinc-950 font-sans text-xs uppercase tracking-wider font-black rounded-xl shadow-md shadow-orange-500/20 transition-all cursor-pointer active:scale-95"
               >
                 ➔ Search Titles to Track &amp; Rate
               </Link>
             </div>
           </section>
         ) : filteredItems.length === 0 ? (
-          <div className="border border-dashed border-stone-300 rounded-md p-8 bg-stone-50 text-center text-xs text-stone-500 space-y-2 shadow-sm font-sans">
-            <div className="font-medium text-stone-700">
+          <div className="rounded-2xl p-8 bg-white text-center text-xs text-zinc-700 space-y-2 shadow-[0_8px_30px_rgb(0,0,0,0.04)] font-sans ring-1 ring-black/5">
+            <div className="font-bold text-zinc-950 text-sm">
               NO RECOMMENDATIONS FOUND MATCHING THESE FILTERS.
             </div>
-            <div className="text-stone-400">
+            <div className="text-zinc-600 font-medium">
               Try switching the era, selecting &quot;All Genres&quot;, or
               clicking &quot;I&apos;m Feeling Lucky&quot;.
             </div>
@@ -448,8 +434,8 @@ export default function DiscoveryView({
             {/* Sentinel for Infinite Scroll (20 more on scroll) */}
             <div ref={sentinelRef} className="h-6 w-full" aria-hidden="true" />
             {isLoadingMore && (
-              <div className="p-4 text-center font-mono text-xs uppercase text-stone-600 font-medium flex items-center justify-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-stone-700 animate-pulse" />
+              <div className="p-4 text-center font-mono text-xs uppercase text-zinc-600 font-medium flex items-center justify-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-zinc-700 animate-pulse" />
                 <span>LOADING 20 MORE RECOMMENDATIONS...</span>
               </div>
             )}
