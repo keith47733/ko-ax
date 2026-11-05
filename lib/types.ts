@@ -2,11 +2,14 @@ export type MediaType = "movie" | "tv";
 
 export type MediaStatus = "want_to_watch" | "watching" | "watched";
 
+export type LocalViewMode = "library" | MediaStatus | "calendar";
+
 export interface MediaRecord {
   tmdb_id: number;
   title: string;
   media_type: MediaType;
   poster_path: string | null;
+  backdrop_path?: string | null;
   release_date?: string | null;
   next_air_date?: string | null;
   next_episode_label?: string | null;
@@ -56,6 +59,7 @@ export interface MergedMediaItem {
   title: string;
   media_type: MediaType;
   poster_path: string | null;
+  backdrop_path?: string | null;
   release_date?: string | null;
   next_air_date?: string | null;
   next_episode_label?: string | null;
@@ -122,15 +126,16 @@ export interface DiscoverySeedInfo {
 export interface DiscoveryEngineResult {
   mediaType: MediaType;
   suggestions: MergedMediaItem[];
-  seed: DiscoverySeedInfo;
-  dataSource: "tmdb" | "wireframe-store";
+  seed: DiscoverySeedInfo | null;
+  noRatedMedia?: boolean;
+  dataSource: "tmdb" | "wireframe-store" | "none";
 }
 
 /**
  * Standardized responsive grid for MediaCards across all views (Tracker, Search, Discovery, Calendar).
- * Ensures cards remain a consistent ~240px wide at all breakpoints without ballooning.
+ * Sized for a maximum of 4 cards across on desktop/ultrawide displays, ensuring large cinematic posters.
  */
 export const MEDIA_GRID_CLASS =
-  "grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-4";
+  "grid grid-cols-1 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-4 gap-5 sm:gap-6";
 
 

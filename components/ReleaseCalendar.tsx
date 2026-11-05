@@ -42,10 +42,10 @@ function formatDateBanner(dateStr: string): { full: string; relative: string } {
       today.getDate(),
       12,
       0,
-      0
+      0,
     );
     const diffDays = Math.round(
-      (dateObj.getTime() - todayNoon.getTime()) / (1000 * 60 * 60 * 24)
+      (dateObj.getTime() - todayNoon.getTime()) / (1000 * 60 * 60 * 24),
     );
 
     let relative = "";
@@ -77,6 +77,16 @@ function formatDateBanner(dateStr: string): { full: string; relative: string } {
   }
 }
 
+type TimeHorizon = "upcoming" | "next_30" | "next_90" | "all" | "past";
+
+const TIME_HORIZONS: Array<{ key: TimeHorizon; label: string }> = [
+  { key: "upcoming", label: "UPCOMING" },
+  { key: "next_30", label: "NEXT 30 DAYS" },
+  { key: "next_90", label: "NEXT 90 DAYS" },
+  { key: "all", label: "ALL FUTURE" },
+  { key: "past", label: "PAST RELEASES" },
+];
+
 export default function ReleaseCalendar({
   initialItems,
 }: ReleaseCalendarProps) {
@@ -90,7 +100,7 @@ export default function ReleaseCalendar({
 
   const [localTitleFilter, setLocalTitleFilter] = useState("");
   const [mediaTypeFilter, setMediaTypeFilter] = useState<"all" | MediaType>(
-    "all"
+    "all",
   );
   const [queueFilter, setQueueFilter] = useState<
     "all" | "watching" | "want_to_watch"
@@ -107,8 +117,8 @@ export default function ReleaseCalendar({
   function handleCardStateChange(updated: MergedMediaItem) {
     setItems((prev) =>
       prev.map((item) =>
-        item.tmdb_id === updated.tmdb_id ? { ...item, ...updated } : item
-      )
+        item.tmdb_id === updated.tmdb_id ? { ...item, ...updated } : item,
+      ),
     );
   }
 
@@ -226,7 +236,7 @@ export default function ReleaseCalendar({
           setVisibleDateLimit((prev) => prev + 3);
         }
       },
-      { rootMargin: "250px" }
+      { rootMargin: "250px" },
     );
 
     observer.observe(sentinel);
@@ -236,275 +246,252 @@ export default function ReleaseCalendar({
   const visibleGroups = dateGroups.slice(0, visibleDateLimit);
 
   return (
-    <div className="space-y-6">
-      {/* =========================================================================
-          TOP HERO COMMAND BAR (1-Tap Chip Toggles)
-          ========================================================================= */}
-      <section className="border-2 border-black bg-white p-3 sm:p-4 rounded-[2px]">
-        <div>
-          <span className="text-[10px] sm:text-xs uppercase font-bold text-neutral-600 block">
-            RELEASE RADAR
+    <div className="flex flex-col lg:flex-row gap-5 sm:gap-6 items-start w-full">
+      {/* =====================================================================
+          LEFT (20%) FRAME: Archival Upcoming Releases Filter Console
+          ===================================================================== */}
+      <aside className="w-full lg:w-72 shrink-0 border border-stone-300 rounded-md bg-stone-50 p-4 shadow-sm space-y-4">
+        {/* Frame Header with View Title & Count */}
+        <div className="border-b border-stone-200 pb-3 flex items-center justify-between gap-2">
+          <h2 className="font-serif text-sm sm:text-base font-bold text-stone-900 tracking-tight truncate">
+            UPCOMING RADAR
+          </h2>
+          <span className="text-xs font-mono font-medium px-2 py-0.5 rounded border border-stone-300 shrink-0 bg-stone-200 text-stone-700">
+            [{totalItemsCount}]
           </span>
-          <h1 className="text-lg sm:text-xl font-bold uppercase">
-            RELEASE CALENDAR ({totalItemsCount} UPCOMING)
-          </h1>
         </div>
 
-        {/* 1-Tap Chip Toggles Bar */}
-        <div className="pt-2.5 flex flex-wrap items-center gap-2.5 sm:gap-3 text-xs uppercase">
-          {/* 1. Filter by Title */}
-          <div className="w-full sm:w-48 md:w-56 shrink-0">
-            <input
-              id="calendar-title-filter"
-              type="text"
-              value={localTitleFilter}
-              onChange={(e) => setLocalTitleFilter(e.target.value)}
-              placeholder="FILTER TITLE..."
-              className="w-full h-8 sm:h-8.5 border-2 border-black px-2.5 bg-white text-black text-xs font-bold uppercase rounded-[2px] focus:outline-none placeholder:text-neutral-400 placeholder:font-normal"
-            />
-          </div>
+        {/* 1. Filter by Title */}
+        <div>
+          <input
+            id="calendar-title-filter"
+            type="text"
+            value={localTitleFilter}
+            onChange={(e) => setLocalTitleFilter(e.target.value)}
+            placeholder="FILTER TITLE..."
+            className="w-full h-9 border border-stone-300 rounded-md px-2.5 bg-stone-50 text-stone-900 text-xs sm:text-sm font-sans focus:outline-none focus:border-stone-500 placeholder:text-stone-400"
+          />
+        </div>
 
-          {/* 2. Media Type Chip Toggle */}
-          <div className="flex items-center gap-1.5">
-            <span className="font-bold text-[10px] text-neutral-500 shrink-0">
-              MEDIA:
-            </span>
-            <div className="inline-flex border-2 border-black divide-x-2 divide-black rounded-[2px] overflow-hidden text-[10px] sm:text-[11px] font-bold uppercase">
-              <button
-                type="button"
-                onClick={() => setMediaTypeFilter("all")}
-                className={`px-2.5 py-1 transition-colors cursor-pointer ${
-                  mediaTypeFilter === "all"
-                    ? "bg-black text-white"
-                    : "bg-white text-black hover:bg-neutral-100"
-                }`}
-              >
-                ALL
-              </button>
-              <button
-                type="button"
-                onClick={() => setMediaTypeFilter("movie")}
-                className={`px-2.5 py-1 transition-colors cursor-pointer ${
-                  mediaTypeFilter === "movie"
-                    ? "bg-black text-white"
-                    : "bg-white text-black hover:bg-neutral-100"
-                }`}
-              >
-                MOVIES
-              </button>
-              <button
-                type="button"
-                onClick={() => setMediaTypeFilter("tv")}
-                className={`px-2.5 py-1 transition-colors cursor-pointer ${
-                  mediaTypeFilter === "tv"
-                    ? "bg-black text-white"
-                    : "bg-white text-black hover:bg-neutral-100"
-                }`}
-              >
-                TV
-              </button>
-            </div>
-          </div>
-
-          {/* 3. Queue Status Chip Toggle */}
-          <div className="flex items-center gap-1.5">
-            <span className="font-bold text-[10px] text-neutral-500 shrink-0">
-              QUEUE:
-            </span>
-            <div className="inline-flex border-2 border-black divide-x-2 divide-black rounded-[2px] overflow-hidden text-[10px] sm:text-[11px] font-bold uppercase">
-              <button
-                type="button"
-                onClick={() => setQueueFilter("all")}
-                className={`px-2.5 py-1 transition-colors cursor-pointer ${
-                  queueFilter === "all"
-                    ? "bg-black text-white"
-                    : "bg-white text-black hover:bg-neutral-100"
-                }`}
-              >
-                ALL
-              </button>
-              <button
-                type="button"
-                onClick={() => setQueueFilter("watching")}
-                className={`px-2.5 py-1 transition-colors cursor-pointer ${
-                  queueFilter === "watching"
-                    ? "bg-black text-white"
-                    : "bg-white text-black hover:bg-neutral-100"
-                }`}
-              >
-                WATCHING
-              </button>
-              <button
-                type="button"
-                onClick={() => setQueueFilter("want_to_watch")}
-                className={`px-2.5 py-1 transition-colors cursor-pointer ${
-                  queueFilter === "want_to_watch"
-                    ? "bg-black text-white"
-                    : "bg-white text-black hover:bg-neutral-100"
-                }`}
-              >
-                WANT
-              </button>
-            </div>
-          </div>
-
-          {/* 4. Time Horizon Chip Toggle */}
-          <div className="flex items-center gap-1.5">
-            <span className="font-bold text-[10px] text-neutral-500 shrink-0">
-              HORIZON:
-            </span>
-            <div className="inline-flex border-2 border-black divide-x-2 divide-black rounded-[2px] overflow-hidden text-[10px] sm:text-[11px] font-bold uppercase">
-              <button
-                type="button"
-                onClick={() => setTimeHorizonFilter("upcoming")}
-                className={`px-2.5 py-1 transition-colors cursor-pointer ${
-                  timeHorizonFilter === "upcoming"
-                    ? "bg-black text-white"
-                    : "bg-white text-black hover:bg-neutral-100"
-                }`}
-              >
-                UPCOMING
-              </button>
-              <button
-                type="button"
-                onClick={() => setTimeHorizonFilter("next_30")}
-                className={`px-2.5 py-1 transition-colors cursor-pointer ${
-                  timeHorizonFilter === "next_30"
-                    ? "bg-black text-white"
-                    : "bg-white text-black hover:bg-neutral-100"
-                }`}
-              >
-                30D
-              </button>
-              <button
-                type="button"
-                onClick={() => setTimeHorizonFilter("next_90")}
-                className={`px-2.5 py-1 transition-colors cursor-pointer ${
-                  timeHorizonFilter === "next_90"
-                    ? "bg-black text-white"
-                    : "bg-white text-black hover:bg-neutral-100"
-                }`}
-              >
-                90D
-              </button>
-              <button
-                type="button"
-                onClick={() => setTimeHorizonFilter("all")}
-                className={`px-2.5 py-1 transition-colors cursor-pointer ${
-                  timeHorizonFilter === "all"
-                    ? "bg-black text-white"
-                    : "bg-white text-black hover:bg-neutral-100"
-                }`}
-              >
-                ALL
-              </button>
-            </div>
-          </div>
-
-          {/* 5. Sort Direction Toggle (Option B: Dedicated Buttons) */}
-          <div className="flex items-center gap-1.5">
-            <span className="font-bold text-[10px] text-neutral-500 shrink-0">
-              DIR:
-            </span>
-            <div className="inline-flex border-2 border-black divide-x-2 divide-black rounded-[2px] overflow-hidden text-[10px] sm:text-[11px] font-bold uppercase">
-              <button
-                type="button"
-                onClick={() => setSortOrder("asc")}
-                title="Earliest date first"
-                className={`px-2.5 py-1 transition-colors cursor-pointer ${
-                  sortOrder === "asc"
-                    ? "bg-black text-white"
-                    : "bg-white text-black hover:bg-neutral-100"
-                }`}
-              >
-                ASC ↑
-              </button>
-              <button
-                type="button"
-                onClick={() => setSortOrder("desc")}
-                title="Latest date first"
-                className={`px-2.5 py-1 transition-colors cursor-pointer ${
-                  sortOrder === "desc"
-                    ? "bg-black text-white"
-                    : "bg-white text-black hover:bg-neutral-100"
-                }`}
-              >
-                DESC ↓
-              </button>
-            </div>
+        {/* 2. Media Type Chip Toggle */}
+        <div className="space-y-1">
+          <span className="block text-[10px] font-mono font-medium uppercase text-stone-500 tracking-wider">
+            MEDIA TYPE
+          </span>
+          <div className="grid grid-cols-3 border border-stone-300 divide-x divide-stone-300 rounded-md overflow-hidden text-xs sm:text-sm font-mono uppercase text-center bg-stone-50 shadow-sm">
+            <button
+              type="button"
+              onClick={() => setMediaTypeFilter("all")}
+              className={`py-2 transition-colors cursor-pointer text-center ${
+                mediaTypeFilter === "all"
+                  ? "bg-stone-800 text-white font-medium"
+                  : "bg-stone-50 text-stone-600 hover:bg-stone-100"
+              }`}
+            >
+              ALL
+            </button>
+            <button
+              type="button"
+              onClick={() => setMediaTypeFilter("movie")}
+              className={`py-2 transition-colors cursor-pointer text-center ${
+                mediaTypeFilter === "movie"
+                  ? "bg-stone-800 text-white font-medium"
+                  : "bg-stone-50 text-stone-600 hover:bg-stone-100"
+              }`}
+            >
+              MOVIES
+            </button>
+            <button
+              type="button"
+              onClick={() => setMediaTypeFilter("tv")}
+              className={`py-2 transition-colors cursor-pointer text-center ${
+                mediaTypeFilter === "tv"
+                  ? "bg-stone-800 text-white font-medium"
+                  : "bg-stone-50 text-stone-600 hover:bg-stone-100"
+              }`}
+            >
+              TV
+            </button>
           </div>
         </div>
-      </section>
+
+        {/* 3. Tracked Queue Chip Toggle */}
+        <div className="space-y-1">
+          <span className="block text-[10px] font-mono font-medium uppercase text-stone-500 tracking-wider">
+            TRACKED QUEUE
+          </span>
+          <div className="grid grid-cols-3 border border-stone-300 divide-x divide-stone-300 rounded-md overflow-hidden text-xs sm:text-sm font-mono uppercase text-center bg-stone-50 shadow-sm">
+            <button
+              type="button"
+              onClick={() => setQueueFilter("all")}
+              className={`py-2 transition-colors cursor-pointer text-center ${
+                queueFilter === "all"
+                  ? "bg-stone-800 text-white font-medium"
+                  : "bg-stone-50 text-stone-600 hover:bg-stone-100"
+              }`}
+            >
+              ALL
+            </button>
+            <button
+              type="button"
+              onClick={() => setQueueFilter("watching")}
+              className={`py-2 transition-colors cursor-pointer text-center ${
+                queueFilter === "watching"
+                  ? "bg-stone-800 text-white font-medium"
+                  : "bg-stone-50 text-stone-600 hover:bg-stone-100"
+              }`}
+            >
+              WATCHING
+            </button>
+            <button
+              type="button"
+              onClick={() => setQueueFilter("want_to_watch")}
+              className={`py-2 transition-colors cursor-pointer text-center ${
+                queueFilter === "want_to_watch"
+                  ? "bg-orange-700 text-white font-medium"
+                  : "bg-stone-50 text-stone-600 hover:bg-stone-100"
+              }`}
+            >
+              WANT
+            </button>
+          </div>
+        </div>
+
+        {/* 4. Time Horizon Filter */}
+        <div className="space-y-1">
+          <span className="block text-[10px] font-mono font-medium uppercase text-stone-500 tracking-wider">
+            TIME HORIZON
+          </span>
+          <div className="grid grid-cols-2 gap-1.5 text-xs font-mono uppercase">
+            {TIME_HORIZONS.map((h) => {
+              const isActive = timeHorizonFilter === h.key;
+              return (
+                <button
+                  key={h.key}
+                  type="button"
+                  onClick={() => setTimeHorizonFilter(h.key)}
+                  className={`py-2 px-1 border rounded-md transition-colors cursor-pointer text-center truncate ${
+                    isActive
+                      ? "bg-stone-800 text-white border-stone-800 font-medium shadow-sm"
+                      : "bg-stone-50 text-stone-700 hover:bg-stone-100 border-stone-300"
+                  }`}
+                >
+                  {h.label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* 5. Sort Order */}
+        <div className="space-y-1">
+          <span className="block text-[10px] font-mono font-medium uppercase text-stone-500 tracking-wider">
+            SORT ORDER
+          </span>
+          <div className="grid grid-cols-2 border border-stone-300 divide-x divide-stone-300 rounded-md overflow-hidden text-xs sm:text-sm font-mono uppercase text-center bg-stone-50 shadow-sm">
+            <button
+              type="button"
+              onClick={() => setSortOrder("asc")}
+              className={`py-2 transition-colors cursor-pointer text-center ${
+                sortOrder === "asc"
+                  ? "bg-stone-800 text-white font-medium"
+                  : "bg-stone-50 text-stone-600 hover:bg-stone-100"
+              }`}
+            >
+              ASC ↑ (SOONEST)
+            </button>
+            <button
+              type="button"
+              onClick={() => setSortOrder("desc")}
+              className={`py-2 transition-colors cursor-pointer text-center ${
+                sortOrder === "desc"
+                  ? "bg-stone-800 text-white font-medium"
+                  : "bg-stone-50 text-stone-600 hover:bg-stone-100"
+              }`}
+            >
+              DESC ↓ (LATEST)
+            </button>
+          </div>
+        </div>
+      </aside>
 
       {/* =========================================================================
-          CHRONOLOGICAL RELEASE STREAM (Grouped by Date, Skipping Empty Days)
+          RIGHT (80%) FRAME: Chronological Timeline of Release Groups
           ========================================================================= */}
-      {dateGroups.length === 0 ? (
-        <section className="border-2 border-black bg-white p-8 text-center text-xs uppercase font-bold">
-          NO UPCOMING RELEASES FOUND MATCHING CURRENT CRITERIA.
-        </section>
-      ) : (
-        <div className="space-y-6">
-          {visibleGroups.map((group) => (
-            <section
-              key={group.dateKey}
-              className="border-2 border-black bg-white overflow-hidden shadow-xs"
-            >
-              {/* Date Banner */}
-              <header className="border-b-2 border-black bg-neutral-100 px-4 py-2.5 flex flex-wrap items-center justify-between gap-2">
-                <div className="flex items-center gap-2.5">
-                  <span className="w-2.5 h-2.5 bg-black shrink-0" />
-                  <h2 className="text-xs sm:text-sm font-bold uppercase tracking-wider text-black">
-                    {group.formattedDate}
-                  </h2>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  {group.relativeLabel && (
-                    <span className="bg-black text-white text-[10px] font-bold uppercase px-2 py-0.5 tracking-wider">
-                      {group.relativeLabel}
-                    </span>
-                  )}
-                  <span className="border-2 border-black bg-white text-[10px] font-bold uppercase px-2 py-0.5">
-                    {group.items.length}{" "}
-                    {group.items.length === 1 ? "RELEASE" : "RELEASES"}
-                  </span>
-                </div>
-              </header>
-
-              {/* Media Cards Grid for this specific date */}
-              <div className="p-3 sm:p-4">
-                <div className={MEDIA_GRID_CLASS}>
-                  {group.items.map((item) => (
-                    <MediaCard
-                      key={item.tmdb_id}
-                      media={item}
-                      onStateChange={handleCardStateChange}
-                    />
-                  ))}
-                </div>
-              </div>
-            </section>
-          ))}
-
-          {/* Sentinel Element for Lazy Load / Infinite Scroll */}
-          <div ref={sentinelRef} className="h-4 w-full" aria-hidden="true" />
-
-          {/* Manual Load More Button as Fallback */}
-          {visibleDateLimit < dateGroups.length && (
-            <div className="pt-2 pb-6 flex justify-center">
-              <button
-                type="button"
-                onClick={() => setVisibleDateLimit((prev) => prev + 4)}
-                className="border-2 border-black bg-white px-6 py-2.5 text-xs font-bold uppercase hover:bg-black hover:text-white transition-colors cursor-pointer shadow-[3px_3px_0px_0px_rgba(0,0,0,1)] active:translate-x-0.5 active:translate-y-0.5"
-              >
-                LOAD MORE UPCOMING DATES ({dateGroups.length - visibleDateLimit}{" "}
-                REMAINING) ➔
-              </button>
+      <div className="flex-1 min-w-0 w-full space-y-6">
+        {dateGroups.length === 0 ? (
+          <section className="border border-stone-300 rounded-md bg-stone-50 p-8 sm:p-12 text-center space-y-3 shadow-sm">
+            <div className="font-mono text-xs text-stone-500 uppercase font-medium tracking-widest">
+              [ NO UPCOMING RELEASES FOUND ]
             </div>
-          )}
-        </div>
-      )}
+            <p className="text-xs sm:text-sm font-sans text-stone-600 max-w-md mx-auto leading-relaxed">
+              No tracked items in your Want-to-Watch or Watching queues match
+              the current filters with confirmed release dates.
+            </p>
+          </section>
+        ) : (
+          <div className="space-y-6">
+            {visibleGroups.map((group) => (
+              <section
+                key={group.dateKey}
+                className="border border-stone-300 rounded-md bg-stone-50 overflow-hidden shadow-sm"
+              >
+                {/* Date Banner */}
+                <header className="border-b border-stone-200 bg-stone-100/70 px-4 py-2.5 flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-2.5">
+                    <span className="w-2 h-2 rounded-full bg-stone-600 shrink-0" />
+                    <h2 className="text-xs sm:text-sm font-serif font-bold uppercase tracking-wider text-stone-900">
+                      {group.formattedDate}
+                    </h2>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    {group.relativeLabel && (
+                      <span className="bg-stone-800 text-white text-[10px] font-mono font-medium uppercase px-2 py-0.5 rounded">
+                        {group.relativeLabel}
+                      </span>
+                    )}
+                    <span className="border border-stone-300 bg-stone-200 text-stone-700 text-[10px] font-mono font-medium uppercase px-2 py-0.5 rounded">
+                      {group.items.length}{" "}
+                      {group.items.length === 1 ? "RELEASE" : "RELEASES"}
+                    </span>
+                  </div>
+                </header>
+
+                {/* Media Cards Grid for this specific date */}
+                <div className="p-3 sm:p-4">
+                  <div className={MEDIA_GRID_CLASS}>
+                    {group.items.map((item) => (
+                      <MediaCard
+                        key={item.tmdb_id}
+                        media={item}
+                        onStateChange={handleCardStateChange}
+                      />
+                    ))}
+                  </div>
+                </div>
+              </section>
+            ))}
+
+            {/* Sentinel Element for Lazy Load / Infinite Scroll */}
+            <div ref={sentinelRef} className="h-4 w-full" aria-hidden="true" />
+
+            {/* Manual Load More Button as Fallback */}
+            {visibleDateLimit < dateGroups.length && (
+              <div className="pt-2 pb-6 flex justify-center">
+                <button
+                  type="button"
+                  onClick={() => setVisibleDateLimit((prev) => prev + 4)}
+                  className="border border-stone-300 rounded-md bg-stone-50 px-6 py-2.5 text-xs font-mono font-medium uppercase text-stone-800 hover:bg-stone-100 transition-colors cursor-pointer shadow-sm"
+                >
+                  LOAD MORE UPCOMING DATES ({dateGroups.length - visibleDateLimit}{" "}
+                  REMAINING) ➔
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

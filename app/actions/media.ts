@@ -1,10 +1,12 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { cookies } from "next/headers";
+import { createClient as createServerSupabaseClient } from "@/lib/supabase/server";
 import {
   buildDefaultSeasonsForTv,
+  clearWireframeStore,
   getMergedSeedItems,
-  getSupabaseClient,
   getWireframeStore,
   isSupabaseConfigured,
 } from "@/lib/supabase";
@@ -27,6 +29,7 @@ interface TmdbRawResult {
   title?: string;
   name?: string;
   poster_path?: string | null;
+  backdrop_path?: string | null;
   release_date?: string;
   first_air_date?: string;
   overview?: string;
@@ -58,6 +61,66 @@ function buildTmdbUrl(path: string, params: Record<string, string> = {}): string
 }
 
 /**
+ * Sanitizes TMDB release and air dates so empty strings and invalid formats
+ * never violate PostgreSQL DATE type constraints ('invalid input syntax for type date: ""').
+ */
+function sanitizeDate(val?: string | null): string | null {
+  if (!val || typeof val !== "string") return null;
+  const trimmed = val.trim();
+  if (!trimmed) return null;
+  const parsed = Date.parse(trimmed);
+  if (isNaN(parsed)) return null;
+  return new Date(parsed).toISOString().slice(0, 10);
+}
+
+/**
+ * Helper to get the server Supabase client wired with cookies, plus authenticated user info.
+ * Supports both live Supabase sessions and simulated operator session fallback.
+ */
+async function getAuthenticatedUser(): Promise<{
+  supabase: Awaited<ReturnType<typeof createServerSupabaseClient>> | null;
+  user: { id: string; email?: string } | null;
+}> {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseKey =
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
+    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
+
+  if (supabaseUrl && supabaseKey) {
+    try {
+      const supabase = await createServerSupabaseClient();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      if (user) {
+        return { supabase, user: { id: user.id, email: user.email } };
+      }
+    } catch {
+      // Fall through to simulated check
+    }
+  }
+
+  try {
+    const cookieStore = await cookies();
+    const simCookie = cookieStore.get("koax_operator_session");
+    if (simCookie?.value) {
+      const parsed = JSON.parse(simCookie.value);
+      if (parsed.email) {
+        return {
+          supabase: null,
+          user: { id: "simulated_operator", email: parsed.email },
+        };
+      }
+    }
+  } catch {
+    // ignore
+  }
+
+  return { supabase: null, user: null };
+}
+
+/**
  * Shared helper: Cross-references a list of TMDB IDs against the user's library
  * in Supabase (if authenticated/configured) or the wireframe store.
  */
@@ -72,23 +135,15 @@ async function getUserMediaLookup(tmdbIds: number[]): Promise<{
     return { lookup, usedSupabase };
   }
 
-  const supabase = getSupabaseClient();
-  if (supabase) {
+  const { supabase, user } = await getAuthenticatedUser();
+  if (supabase && user) {
     try {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-
-      let queryBuilder = supabase
+      const { data: userMediaRows, error } = await supabase
         .from("user_media")
         .select("tmdb_id, status, rating, updated_at")
+        .eq("user_id", user.id)
         .in("tmdb_id", tmdbIds);
 
-      if (user) {
-        queryBuilder = queryBuilder.eq("user_id", user.id);
-      }
-
-      const { data: userMediaRows, error } = await queryBuilder;
       if (!error && userMediaRows) {
         usedSupabase = true;
         for (const row of userMediaRows) {
@@ -145,6 +200,7 @@ export async function searchAndMergeMedia(query: string): Promise<{
     title: string;
     media_type: MediaType;
     poster_path: string | null;
+    backdrop_path?: string | null;
     release_date: string | null;
     overview: string | null;
     tmdb_rating?: number | null;
@@ -177,6 +233,7 @@ export async function searchAndMergeMedia(query: string): Promise<{
           title: item.title || item.name || `Untitled #${item.id}`,
           media_type: item.media_type,
           poster_path: item.poster_path ?? null,
+          backdrop_path: item.backdrop_path ?? null,
           release_date: item.release_date || item.first_air_date || null,
           overview: item.overview ?? null,
           tmdb_rating:
@@ -219,6 +276,7 @@ export async function searchAndMergeMedia(query: string): Promise<{
       title: raw.title,
       media_type: raw.media_type,
       poster_path: raw.poster_path,
+      backdrop_path: raw.backdrop_path ?? null,
       release_date: raw.release_date,
       overview: raw.overview,
       status: matched?.status ?? null,
@@ -247,18 +305,13 @@ export async function getTrackedMediaAction(): Promise<{
   items: MergedMediaItem[];
   dataSource: "supabase" | "wireframe-store";
 }> {
-  const supabase = getSupabaseClient();
+  const { supabase, user } = await getAuthenticatedUser();
   const store = getWireframeStore();
 
-  if (supabase) {
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    if (user) {
-      const { data: rows, error } = await supabase
-        .from("user_media")
-        .select(
+  if (supabase && user) {
+    const { data: rows, error } = await supabase
+      .from("user_media")
+      .select(
           `
           tmdb_id,
           status,
@@ -298,7 +351,12 @@ export async function getTrackedMediaAction(): Promise<{
         });
       }
 
-      if (!error && rows) {
+      if (error) {
+        console.error(
+          "[KO-AX] Error fetching user_media from Supabase:",
+          error.message || JSON.stringify(error)
+        );
+      } else if (rows) {
         const items: MergedMediaItem[] = rows.map((row) => {
           const mediaObj = Array.isArray(row.media) ? row.media[0] : row.media;
           const tmdbId = Number(row.tmdb_id);
@@ -309,6 +367,7 @@ export async function getTrackedMediaAction(): Promise<{
             title: mediaObj?.title || `Media #${tmdbId}`,
             media_type: mediaType,
             poster_path: mediaObj?.poster_path ?? null,
+            backdrop_path: store.media.get(tmdbId)?.backdrop_path ?? null,
             release_date: mediaObj?.release_date ?? null,
             next_air_date:
               mediaObj?.next_air_date ?? mediaObj?.release_date ?? null,
@@ -329,7 +388,6 @@ export async function getTrackedMediaAction(): Promise<{
         return { items, dataSource: "supabase" };
       }
     }
-  }
 
   return {
     items: getMergedSeedItems(),
@@ -347,6 +405,7 @@ export async function upsertUserMediaAction(input: {
   title: string;
   media_type: MediaType;
   poster_path: string | null;
+  backdrop_path?: string | null;
   release_date?: string | null;
   next_air_date?: string | null;
   next_episode_label?: string | null;
@@ -374,6 +433,7 @@ export async function upsertUserMediaAction(input: {
     title: input.title,
     media_type: input.media_type,
     poster_path: input.poster_path,
+    backdrop_path: input.backdrop_path ?? existingMedia?.backdrop_path ?? null,
     release_date: input.release_date ?? existingMedia?.release_date ?? null,
     next_air_date:
       input.next_air_date ??
@@ -405,58 +465,66 @@ export async function upsertUserMediaAction(input: {
   }
 
   let persistedTo: "supabase" | "wireframe-store" = "wireframe-store";
-  const supabase = getSupabaseClient();
+  const { supabase, user } = await getAuthenticatedUser();
 
-  if (supabase) {
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
+  if (supabase && user) {
+    if (resolvedStatus === null) {
+      // Remove from user_media junction table (effectively removes from library)
+      const { error: deleteError } = await supabase
+        .from("user_media")
+        .delete()
+        .match({ user_id: user.id, tmdb_id: input.tmdb_id });
 
-    if (user) {
-      if (resolvedStatus === null) {
-        // Remove from user_media junction table (effectively removes from library)
-        const { error } = await supabase
-          .from("user_media")
-          .delete()
-          .match({ user_id: user.id, tmdb_id: input.tmdb_id });
-
-        if (!error) {
-          persistedTo = "supabase";
-        }
+      if (deleteError) {
+        console.error("[KO-AX] Error deleting user_media row:", deleteError);
       } else {
-        // 1. Upsert into `media` cache table
-        await supabase.from("media").upsert(
-          {
-            tmdb_id: input.tmdb_id,
-            title: input.title,
-            media_type: input.media_type,
-            poster_path: input.poster_path,
-            release_date: input.release_date ?? null,
-            next_air_date: input.next_air_date ?? input.release_date ?? null,
-            next_episode_label: input.next_episode_label ?? null,
-            overview: input.overview ?? null,
-            updated_at: now,
-          },
-          { onConflict: "tmdb_id" }
-        );
+        persistedTo = "supabase";
+      }
+    } else {
+      // 1. Upsert into `media` cache table with sanitized dates
+      const { error: mediaError } = await supabase.from("media").upsert(
+        {
+          tmdb_id: input.tmdb_id,
+          title: input.title,
+          media_type: input.media_type,
+          poster_path: input.poster_path,
+          release_date: sanitizeDate(input.release_date),
+          next_air_date: sanitizeDate(
+            input.next_air_date ?? input.release_date
+          ),
+          next_episode_label: input.next_episode_label ?? null,
+          overview: input.overview ?? null,
+          updated_at: now,
+        },
+        { onConflict: "tmdb_id" }
+      );
 
-        // 2. Upsert into `user_media` junction table
-        const { error } = await supabase.from("user_media").upsert(
-          {
-            user_id: user.id,
-            tmdb_id: input.tmdb_id,
-            status: resolvedStatus,
-            rating: normalizedRating,
-            updated_at: now,
-          },
-          { onConflict: "user_id,tmdb_id" }
-        );
+      if (mediaError) {
+        console.error("[KO-AX] Error caching media metadata to Supabase:", mediaError);
+      }
 
-        if (!error) {
-          persistedTo = "supabase";
-        }
+      // 2. Upsert into `user_media` junction table
+      const { error: userMediaError } = await supabase.from("user_media").upsert(
+        {
+          user_id: user.id,
+          tmdb_id: input.tmdb_id,
+          status: resolvedStatus,
+          rating: normalizedRating,
+          updated_at: now,
+        },
+        { onConflict: "user_id,tmdb_id" }
+      );
+
+      if (userMediaError) {
+        console.error("[KO-AX] Error saving user_media to Supabase:", userMediaError);
+      } else {
+        persistedTo = "supabase";
       }
     }
+  } else {
+    console.warn(
+      "[KO-AX] Supabase write skipped (no active Supabase session). Running in wireframe mode."
+    );
   }
 
   revalidatePath("/");
@@ -471,6 +539,38 @@ export async function upsertUserMediaAction(input: {
     updated_at: now,
     persistedTo,
   };
+}
+
+/**
+ * Deprecated starter pack loader (demo data removed per user direction).
+ */
+export async function loadDemoDataAction(): Promise<{ ok: boolean; count: number }> {
+  return { ok: true, count: 0 };
+}
+
+/**
+ * Resets the user's tracker back to a clean slate (0 entries).
+ */
+export async function clearTrackerAction(): Promise<{ ok: boolean }> {
+  const { supabase, user } = await getAuthenticatedUser();
+  if (supabase && user) {
+    try {
+      await supabase.from("user_episodes").delete().eq("user_id", user.id);
+      await supabase.from("user_media").delete().eq("user_id", user.id);
+      revalidatePath("/");
+      revalidatePath("/calendar");
+      revalidatePath("/discover");
+      return { ok: true };
+    } catch {
+      // Fall through
+    }
+  }
+
+  clearWireframeStore();
+  revalidatePath("/");
+  revalidatePath("/calendar");
+  revalidatePath("/discover");
+  return { ok: true };
 }
 
 /**
@@ -504,40 +604,39 @@ export async function toggleEpisodeWatchedAction(input: {
   });
 
   let persistedTo: "supabase" | "wireframe-store" = "wireframe-store";
-  const supabase = getSupabaseClient();
+  const { supabase, user } = await getAuthenticatedUser();
 
-  if (supabase) {
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
+  if (supabase && user) {
+    const { error: mediaError } = await supabase.from("media").upsert(
+      {
+        tmdb_id: input.tmdb_id,
+        title: input.title,
+        media_type: "tv",
+        poster_path: input.poster_path,
+      },
+      { onConflict: "tmdb_id" }
+    );
+    if (mediaError) {
+      console.error("[KO-AX] Error caching TV metadata for episode:", mediaError);
+    }
 
-    if (user) {
-      await supabase.from("media").upsert(
-        {
-          tmdb_id: input.tmdb_id,
-          title: input.title,
-          media_type: "tv",
-          poster_path: input.poster_path,
-        },
-        { onConflict: "tmdb_id" }
-      );
+    const { error: epError } = await supabase.from("user_episodes").upsert(
+      {
+        user_id: user.id,
+        tmdb_id: input.tmdb_id,
+        tmdb_episode_id: input.tmdb_episode_id,
+        season_number: input.season_number,
+        episode_number: input.episode_number,
+        watched_boolean: input.watched_boolean,
+        watch_date: watchDate,
+      },
+      { onConflict: "user_id,tmdb_episode_id" }
+    );
 
-      const { error } = await supabase.from("user_episodes").upsert(
-        {
-          user_id: user.id,
-          tmdb_id: input.tmdb_id,
-          tmdb_episode_id: input.tmdb_episode_id,
-          season_number: input.season_number,
-          episode_number: input.episode_number,
-          watched_boolean: input.watched_boolean,
-          watch_date: watchDate,
-        },
-        { onConflict: "user_id,tmdb_episode_id" }
-      );
-
-      if (!error) {
-        persistedTo = "supabase";
-      }
+    if (epError) {
+      console.error("[KO-AX] Error saving user_episode to Supabase:", epError);
+    } else {
+      persistedTo = "supabase";
     }
   }
 
@@ -563,31 +662,25 @@ export async function fetchTvSeasonsAction(
   const store = getWireframeStore();
   const episodeMap = new Map<number, UserEpisodeRecord>(store.userEpisodes);
 
-  const supabase = getSupabaseClient();
-  if (supabase) {
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
+  const { supabase, user } = await getAuthenticatedUser();
+  if (supabase && user) {
+    const { data: epRows } = await supabase
+      .from("user_episodes")
+      .select(
+        "tmdb_id, tmdb_episode_id, season_number, episode_number, watched_boolean, watch_date"
+      )
+      .eq("user_id", user.id)
+      .eq("tmdb_id", tmdbId);
 
-    if (user) {
-      const { data: epRows } = await supabase
-        .from("user_episodes")
-        .select(
-          "tmdb_id, tmdb_episode_id, season_number, episode_number, watched_boolean, watch_date"
-        )
-        .eq("user_id", user.id)
-        .eq("tmdb_id", tmdbId);
-
-      for (const row of epRows ?? []) {
-        episodeMap.set(Number(row.tmdb_episode_id), {
-          tmdb_id: Number(row.tmdb_id),
-          tmdb_episode_id: Number(row.tmdb_episode_id),
-          season_number: Number(row.season_number),
-          episode_number: Number(row.episode_number),
-          watched_boolean: Boolean(row.watched_boolean),
-          watch_date: row.watch_date,
-        });
-      }
+    for (const row of epRows ?? []) {
+      episodeMap.set(Number(row.tmdb_episode_id), {
+        tmdb_id: Number(row.tmdb_id),
+        tmdb_episode_id: Number(row.tmdb_episode_id),
+        season_number: Number(row.season_number),
+        episode_number: Number(row.episode_number),
+        watched_boolean: Boolean(row.watched_boolean),
+        watch_date: row.watch_date,
+      });
     }
   }
 
@@ -603,50 +696,59 @@ export async function fetchTvSeasonsAction(
       };
 
       const validSeasons = (showData.seasons ?? [])
-        .filter((s) => s.season_number > 0)
-        .slice(0, 3);
+        .filter((s) => s.season_number > 0);
 
       if (validSeasons.length > 0) {
-        const fetchedSeasons: SeasonWireframeGroup[] = [];
-        for (const s of validSeasons) {
-          const seasonRes = await fetch(
-            buildTmdbUrl(`/tv/${tmdbId}/season/${s.season_number}`),
-            {
-              headers: getTmdbHeaders(),
-              cache: "no-store",
-            }
-          );
+        // Fetch all seasons concurrently in parallel
+        const seasonResults = await Promise.all(
+          validSeasons.map(async (s) => {
+            try {
+              const seasonRes = await fetch(
+                buildTmdbUrl(`/tv/${tmdbId}/season/${s.season_number}`),
+                {
+                  headers: getTmdbHeaders(),
+                  cache: "no-store",
+                }
+              );
 
-          if (seasonRes.ok) {
-            const seasonData = (await seasonRes.json()) as {
-              episodes?: Array<{
-                id: number;
-                episode_number: number;
-                name: string;
-                air_date?: string | null;
-              }>;
-            };
+              if (!seasonRes.ok) return null;
 
-            const episodes = (seasonData.episodes ?? []).map((ep) => {
-              const saved = episodeMap.get(ep.id);
-              return {
-                tmdb_episode_id: ep.id,
-                season_number: s.season_number,
-                episode_number: ep.episode_number,
-                title: ep.name || `Episode ${ep.episode_number}`,
-                air_date: ep.air_date ?? null,
-                watched_boolean: saved?.watched_boolean ?? false,
-                watch_date: saved?.watch_date ?? null,
+              const seasonData = (await seasonRes.json()) as {
+                episodes?: Array<{
+                  id: number;
+                  episode_number: number;
+                  name: string;
+                  air_date?: string | null;
+                }>;
               };
-            });
 
-            fetchedSeasons.push({
-              season_number: s.season_number,
-              name: s.name || `Season ${s.season_number}`,
-              episodes,
-            });
-          }
-        }
+              const episodes = (seasonData.episodes ?? []).map((ep) => {
+                const saved = episodeMap.get(ep.id);
+                return {
+                  tmdb_episode_id: ep.id,
+                  season_number: s.season_number,
+                  episode_number: ep.episode_number,
+                  title: ep.name || `Episode ${ep.episode_number}`,
+                  air_date: ep.air_date ?? null,
+                  watched_boolean: saved?.watched_boolean ?? false,
+                  watch_date: saved?.watch_date ?? null,
+                };
+              });
+
+              return {
+                season_number: s.season_number,
+                name: s.name || `Season ${s.season_number}`,
+                episodes,
+              };
+            } catch {
+              return null;
+            }
+          })
+        );
+
+        const fetchedSeasons = seasonResults
+          .filter((s): s is SeasonWireframeGroup => s !== null)
+          .sort((a, b) => a.season_number - b.season_number);
 
         if (fetchedSeasons.length > 0) {
           return fetchedSeasons;
@@ -658,6 +760,124 @@ export async function fetchTvSeasonsAction(
   }
 
   return buildDefaultSeasonsForTv(tmdbId, episodeMap);
+}
+
+/**
+ * Fetches unified media detail for a single title by TMDB ID.
+ * Merges TMDB live data (including backdrop_path and episodes) with user's tracking state and episode history.
+ */
+export async function getMediaDetailAction(
+  tmdbId: number,
+  mediaTypeHint?: "movie" | "tv"
+): Promise<{
+  media: MergedMediaItem | null;
+  dataSource: "supabase" | "wireframe-store";
+}> {
+  const store = getWireframeStore();
+  const existingMedia = store.media.get(tmdbId);
+  const existingUserMedia = store.userMedia.get(tmdbId);
+
+  const { supabase, user } = await getAuthenticatedUser();
+  let userStatus: MediaStatus | null = existingUserMedia?.status ?? null;
+  let userRating: number | null = existingUserMedia?.rating ?? null;
+  let updatedAt: string | null = existingUserMedia?.updated_at ?? null;
+  let dataSource: "supabase" | "wireframe-store" = "wireframe-store";
+
+  if (supabase && user) {
+    dataSource = "supabase";
+    const { data: userRow } = await supabase
+      .from("user_media")
+      .select("status, rating, updated_at")
+      .eq("user_id", user.id)
+      .eq("tmdb_id", tmdbId)
+      .maybeSingle();
+
+    if (userRow) {
+      userStatus = userRow.status as MediaStatus;
+      userRating = userRow.rating !== null ? Number(userRow.rating) : null;
+      updatedAt = userRow.updated_at;
+    }
+  }
+
+  // Determine media type: hint -> cached record -> probe TMDB
+  let mediaType: MediaType = mediaTypeHint || existingMedia?.media_type || "movie";
+
+  // Try fetching TMDB details for backdrop, high-res poster, full synopsis, release date
+  let title = existingMedia?.title || `Media #${tmdbId}`;
+  let posterPath = existingMedia?.poster_path ?? null;
+  let backdropPath = existingMedia?.backdrop_path ?? null;
+  let releaseDate = existingMedia?.release_date ?? null;
+  let nextAirDate = existingMedia?.next_air_date ?? null;
+  let nextEpisodeLabel = existingMedia?.next_episode_label ?? null;
+  let overview = existingMedia?.overview ?? null;
+  let tmdbRating = existingMedia?.tmdb_rating ?? null;
+
+  try {
+    let res = await fetch(buildTmdbUrl(`/${mediaType}/${tmdbId}`), {
+      headers: getTmdbHeaders(),
+      cache: "no-store",
+    });
+
+    if (!res.ok && !mediaTypeHint && !existingMedia) {
+      const otherType: MediaType = mediaType === "movie" ? "tv" : "movie";
+      const otherRes = await fetch(buildTmdbUrl(`/${otherType}/${tmdbId}`), {
+        headers: getTmdbHeaders(),
+        cache: "no-store",
+      });
+      if (otherRes.ok) {
+        res = otherRes;
+        mediaType = otherType;
+      }
+    }
+
+    if (res.ok) {
+      const data = await res.json();
+      title = data.title || data.name || title;
+      posterPath = data.poster_path ?? posterPath;
+      backdropPath = data.backdrop_path ?? backdropPath;
+      releaseDate = data.release_date || data.first_air_date || releaseDate;
+      overview = data.overview || overview;
+      if (typeof data.vote_average === "number") {
+        tmdbRating = Math.round(data.vote_average * 10) / 10;
+      }
+      if (mediaType === "tv") {
+        if (data.next_episode_to_air) {
+          nextAirDate = data.next_episode_to_air.air_date ?? nextAirDate;
+          nextEpisodeLabel = `S${String(data.next_episode_to_air.season_number).padStart(2, "0")}E${String(data.next_episode_to_air.episode_number).padStart(2, "0")} — ${data.next_episode_to_air.name || "TBA"}`;
+        }
+      }
+    }
+  } catch (err) {
+    console.error("[KO-AX] TMDB fetch error in getMediaDetailAction:", err);
+  }
+
+  // If TV, fetch full season and episode breakdown
+  let seasons: SeasonWireframeGroup[] | undefined = undefined;
+  if (mediaType === "tv") {
+    seasons = await fetchTvSeasonsAction(tmdbId);
+    if (!seasons || seasons.length === 0) {
+      seasons = buildDefaultSeasonsForTv(tmdbId, store.userEpisodes);
+    }
+  }
+
+  const mediaItem: MergedMediaItem = {
+    tmdb_id: tmdbId,
+    title,
+    media_type: mediaType,
+    poster_path: posterPath,
+    backdrop_path: backdropPath,
+    release_date: releaseDate,
+    next_air_date: nextAirDate,
+    next_episode_label: nextEpisodeLabel,
+    overview,
+    status: userStatus,
+    rating: userRating,
+    updated_at: updatedAt,
+    tmdb_rating: tmdbRating,
+    seasons,
+  };
+
+  return { media: mediaItem, dataSource };
 }
 
 // ============================================================================
@@ -899,9 +1119,9 @@ export async function getDiscoveryRecommendationsAction(params: {
   currentSeedId?: number;
 }): Promise<DiscoveryEngineResult> {
   const store = getWireframeStore();
-  const supabase = getSupabaseClient();
+  const { supabase, user } = await getAuthenticatedUser();
   const activeType: MediaType = params.mediaType || params.seedType || "movie";
-  const activeEra: string = params.eraKey || "2020s";
+  const activeEra: string = params.eraKey || "all";
   const genreKey: string = params.genreKey || "all";
   const page = params.page && params.page > 0 ? params.page : 1;
 
@@ -916,33 +1136,39 @@ export async function getDiscoveryRecommendationsAction(params: {
     isUrlSeed = true;
   }
 
-  // If not seeded via URL, pick an 8+ rated item from user library (or defaults)
+  // If not seeded via URL, pick from user's rated library (preferring 8+, falling back to any rated item)
   if (!seedId) {
     const highRatedCandidates: number[] = [];
 
-    if (supabase) {
+    if (supabase && user) {
       try {
-        const {
-          data: { user },
-        } = await supabase.auth.getUser();
-
-        let query = supabase
+        const { data: rows, error } = await supabase
           .from("user_media")
           .select("tmdb_id, rating, media:tmdb_id (media_type)")
-          .gte("rating", 8);
+          .eq("user_id", user.id)
+          .not("rating", "is", null)
+          .order("rating", { ascending: false });
 
-        if (user) {
-          query = query.eq("user_id", user.id);
-        }
-
-        const { data: rows, error } = await query;
         if (!error && rows) {
+          const eightsAndAbove: number[] = [];
+          const allRated: number[] = [];
+
           for (const row of rows) {
             const mediaObj = Array.isArray(row.media) ? row.media[0] : row.media;
             const rowMediaType = mediaObj?.media_type as MediaType | undefined;
             if (rowMediaType === activeType) {
-              highRatedCandidates.push(Number(row.tmdb_id));
+              const tmdbIdNum = Number(row.tmdb_id);
+              allRated.push(tmdbIdNum);
+              if (Number(row.rating) >= 8) {
+                eightsAndAbove.push(tmdbIdNum);
+              }
             }
+          }
+
+          if (eightsAndAbove.length > 0) {
+            highRatedCandidates.push(...eightsAndAbove);
+          } else if (allRated.length > 0) {
+            highRatedCandidates.push(...allRated);
           }
         }
       } catch {
@@ -951,24 +1177,39 @@ export async function getDiscoveryRecommendationsAction(params: {
     }
 
     if (highRatedCandidates.length === 0) {
+      const eights: number[] = [];
+      const allRated: number[] = [];
       for (const [id, userRecord] of store.userMedia.entries()) {
-        if (userRecord.rating !== null && userRecord.rating >= 8) {
+        if (userRecord.rating !== null && userRecord.rating >= 1) {
           const mediaRecord = store.media.get(id);
-          if (mediaRecord?.media_type === activeType && !highRatedCandidates.includes(id)) {
-            highRatedCandidates.push(id);
+          if (mediaRecord?.media_type === activeType) {
+            allRated.push(id);
+            if (userRecord.rating >= 8) {
+              eights.push(id);
+            }
           }
         }
       }
+      if (eights.length > 0) {
+        highRatedCandidates.push(...eights);
+      } else if (allRated.length > 0) {
+        highRatedCandidates.push(...allRated);
+      }
     }
 
-    const DEFAULT_SEEDS =
-      activeType === "movie"
-        ? [693134, 335984, 872585, 414906, 157336]
-        : [95396, 136315, 83867, 126308, 106379];
+    // If user has no rated titles for this media type and didn't provide a manual seed,
+    // do not fabricate fake recommendations. Return standby state prompting them to rate media.
+    if (highRatedCandidates.length === 0) {
+      return {
+        mediaType: activeType,
+        suggestions: [],
+        seed: null,
+        noRatedMedia: true,
+        dataSource: "none",
+      };
+    }
 
-    const pool =
-      highRatedCandidates.length > 0 ? highRatedCandidates : DEFAULT_SEEDS;
-
+    const pool = highRatedCandidates;
     const previousId = params.currentSeedId;
 
     const available =

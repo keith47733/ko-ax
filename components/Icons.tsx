@@ -181,3 +181,22 @@ export function UserIcon({ className }: { className?: string }) {
   );
 }
 
+export function LibraryIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      className={className || "w-5 h-5"}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <rect x="3" y="3" width="5" height="18" />
+      <rect x="10" y="3" width="5" height="18" />
+      <path d="M17 3l4 18" />
+    </svg>
+  );
+}
+
+

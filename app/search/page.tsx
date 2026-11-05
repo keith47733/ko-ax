@@ -1,4 +1,5 @@
 import React, { Suspense } from "react";
+import { connection } from "next/server";
 import SearchResultsPane from "@/components/SearchResultsPane";
 import { searchAndMergeMedia } from "@/app/actions/media";
 
@@ -11,6 +12,7 @@ async function SearchResultsPipeline({
 }: {
   searchParams: Promise<{ q?: string }>;
 }) {
+  await connection();
   const resolvedParams = await searchParams;
   const query = (resolvedParams.q ?? "").trim();
 
@@ -25,7 +27,7 @@ export default function SearchPage({ searchParams }: SearchPageProps) {
   return (
     <Suspense
       fallback={
-        <div className="border-2 border-black bg-white p-6 text-xs uppercase font-bold">
+        <div className="border border-stone-300 rounded-md bg-stone-50 p-6 text-xs uppercase font-mono text-stone-600 shadow-sm">
           QUERYING TMDB API &amp; CROSS-REFERENCING SUPABASE user_media...
         </div>
       }
@@ -34,4 +36,3 @@ export default function SearchPage({ searchParams }: SearchPageProps) {
     </Suspense>
   );
 }
-

@@ -1,28 +1,28 @@
 "use client";
 
 import React, { useMemo, useState } from "react";
+import Link from "next/link";
 import MediaCard from "@/components/MediaCard";
 import ReleaseCalendar from "@/components/ReleaseCalendar";
 import {
   MEDIA_GRID_CLASS,
-  MediaStatus,
   MediaType,
   MergedMediaItem,
+  LocalViewMode,
 } from "@/lib/types";
-
-export type LocalViewMode = MediaStatus | "calendar";
 
 interface MainViewingPaneProps {
   initialItems: MergedMediaItem[];
   activeView: LocalViewMode;
-  dataSource: "supabase" | "wireframe-store";
+  dataSource?: "supabase" | "wireframe-store";
 }
 
 const VIEW_LABELS: Record<LocalViewMode, string> = {
+  library: "ALL MEDIA LIBRARY",
   want_to_watch: "WANT TO WATCH",
   watching: "CURRENTLY WATCHING",
   watched: "WATCHED & RATED",
-  calendar: "RELEASE CALENDAR (RADAR)",
+  calendar: "UPCOMING RELEASES (RADAR)",
 };
 
 export default function MainViewingPane({
@@ -38,15 +38,29 @@ export default function MainViewingPane({
     setItems(initialItems);
   }
 
+  const [prevActiveView, setPrevActiveView] = useState(activeView);
   const [localTitleFilter, setLocalTitleFilter] = useState("");
   const [mediaTypeFilter, setMediaTypeFilter] = useState<"all" | MediaType>(
     "all"
   );
   const [minRatingFilter, setMinRatingFilter] = useState<number>(0);
   const [sortBy, setSortBy] = useState<"updated_at" | "title" | "rating">(
-    "updated_at"
+    activeView === "library" ? "title" : "updated_at"
   );
-  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">(
+    activeView === "library" ? "asc" : "desc"
+  );
+
+  if (prevActiveView !== activeView) {
+    setPrevActiveView(activeView);
+    if (activeView === "library") {
+      setSortBy("title");
+      setSortOrder("asc");
+    } else {
+      setSortBy("updated_at");
+      setSortOrder("desc");
+    }
+  }
 
   function handleCardStateChange(updated: MergedMediaItem) {
     setItems((prev) => {
@@ -64,7 +78,16 @@ export default function MainViewingPane({
     if (activeView === "calendar") return items;
 
     return items
-      .filter((item) => item.status === activeView)
+      .filter((item) => {
+        if (activeView === "library") {
+          return (
+            item.status === "want_to_watch" ||
+            item.status === "watching" ||
+            item.status === "watched"
+          );
+        }
+        return item.status === activeView;
+      })
       .filter((item) =>
         mediaTypeFilter === "all" ? true : item.media_type === mediaTypeFilter
       )
@@ -106,226 +129,227 @@ export default function MainViewingPane({
   }
 
   return (
-    <div className="space-y-6">
-      {/* Top Status View Hero with 1-Tap Chip Toggles */}
-      <section className="border-2 border-black bg-white p-3 sm:p-4 rounded-xs">
-        <div>
-          <span className="text-[10px] sm:text-xs uppercase font-bold text-neutral-600 block">
-            MEDIA TRACKER
+    <div className="flex flex-col lg:flex-row gap-5 sm:gap-6 items-start w-full">
+      {/* =====================================================================
+          LEFT (20%) FRAME: Archival Minimalist Filter Console
+          ===================================================================== */}
+      <aside className="w-full lg:w-72 shrink-0 border border-stone-300 rounded-md bg-stone-50 p-4 shadow-sm space-y-4">
+        {/* Frame Header with View Title & Count */}
+        <div className="border-b border-stone-200 pb-3 flex items-center justify-between gap-2">
+          <h2 className="font-serif text-sm sm:text-base font-bold text-stone-900 tracking-tight truncate">
+            {VIEW_LABELS[activeView]}
+          </h2>
+          <span
+            className={`text-xs font-mono font-medium px-2 py-0.5 rounded border border-stone-300 shrink-0 ${
+              activeView === "want_to_watch"
+                ? "bg-orange-700 text-white border-transparent"
+                : activeView === "watched"
+                ? "bg-emerald-800 text-white border-transparent"
+                : activeView === "watching"
+                ? "bg-stone-800 text-white border-transparent"
+                : "bg-stone-200 text-stone-700"
+            }`}
+          >
+            [{filteredAndSortedItems.length}]
           </span>
-          <h1 className="text-lg sm:text-xl font-bold uppercase">
-            {VIEW_LABELS[activeView]} ({filteredAndSortedItems.length})
-          </h1>
         </div>
 
-        {/* 1-Tap Chip Toggles Bar (Saves Vertical Space & Mobile Clicks) */}
-        <div className="pt-2.5 flex flex-wrap items-center gap-2.5 sm:gap-3 text-xs uppercase">
-          {/* 1. Local Title Filter */}
-          <div className="w-full sm:w-48 md:w-56 shrink-0">
-            <input
-              id="local-title-filter"
-              type="text"
-              value={localTitleFilter}
-              onChange={(e) => setLocalTitleFilter(e.target.value)}
-              placeholder="FILTER TITLE..."
-              className="w-full h-8 sm:h-8.5 border-2 border-black px-2.5 bg-white text-black text-xs font-bold uppercase rounded-xs focus:outline-none placeholder:text-neutral-400 placeholder:font-normal"
-            />
-          </div>
+        {/* 1. Title Filter */}
+        <div>
+          <input
+            id="local-title-filter"
+            type="text"
+            value={localTitleFilter}
+            onChange={(e) => setLocalTitleFilter(e.target.value)}
+            placeholder="TYPE TO FILTER..."
+            className="w-full h-9 border border-stone-300 rounded-md px-2.5 bg-stone-50 text-stone-900 text-xs sm:text-sm font-sans focus:outline-none focus:border-stone-500 placeholder:text-stone-400"
+          />
+        </div>
 
-          {/* 2. Media Type Chip Toggle */}
-          <div className="flex items-center gap-1.5">
-            <span className="font-bold text-[10px] text-neutral-500 shrink-0">
-              MEDIA:
-            </span>
-            <div className="inline-flex border-2 border-black divide-x-2 divide-black rounded-xs overflow-hidden text-[10px] sm:text-[11px] font-bold uppercase">
-              <button
-                type="button"
-                onClick={() => setMediaTypeFilter("all")}
-                className={`px-2.5 py-1 transition-colors cursor-pointer ${
-                  mediaTypeFilter === "all"
-                    ? "bg-black text-white"
-                    : "bg-white text-black hover:bg-neutral-100"
-                }`}
-              >
-                ALL
-              </button>
-              <button
-                type="button"
-                onClick={() => setMediaTypeFilter("movie")}
-                className={`px-2.5 py-1 transition-colors cursor-pointer ${
-                  mediaTypeFilter === "movie"
-                    ? "bg-black text-white"
-                    : "bg-white text-black hover:bg-neutral-100"
-                }`}
-              >
-                MOVIES
-              </button>
-              <button
-                type="button"
-                onClick={() => setMediaTypeFilter("tv")}
-                className={`px-2.5 py-1 transition-colors cursor-pointer ${
-                  mediaTypeFilter === "tv"
-                    ? "bg-black text-white"
-                    : "bg-white text-black hover:bg-neutral-100"
-                }`}
-              >
-                TV
-              </button>
-            </div>
-          </div>
-
-          {/* 3. Minimum Rating Chip Toggle */}
-          <div className="flex items-center gap-1.5">
-            <span className="font-bold text-[10px] text-neutral-500 shrink-0">
-              RATING:
-            </span>
-            <div className="inline-flex border-2 border-black divide-x-2 divide-black rounded-xs overflow-hidden text-[10px] sm:text-[11px] font-bold uppercase">
-              <button
-                type="button"
-                onClick={() => setMinRatingFilter(0)}
-                className={`px-2.5 py-1 transition-colors cursor-pointer ${
-                  minRatingFilter === 0
-                    ? "bg-black text-white"
-                    : "bg-white text-black hover:bg-neutral-100"
-                }`}
-              >
-                ALL
-              </button>
-              <button
-                type="button"
-                onClick={() => setMinRatingFilter(7)}
-                className={`px-2.5 py-1 transition-colors cursor-pointer ${
-                  minRatingFilter === 7
-                    ? "bg-black text-white"
-                    : "bg-white text-black hover:bg-neutral-100"
-                }`}
-              >
-                7+
-              </button>
-              <button
-                type="button"
-                onClick={() => setMinRatingFilter(8)}
-                className={`px-2.5 py-1 transition-colors cursor-pointer ${
-                  minRatingFilter === 8
-                    ? "bg-black text-white"
-                    : "bg-white text-black hover:bg-neutral-100"
-                }`}
-              >
-                8+
-              </button>
-              <button
-                type="button"
-                onClick={() => setMinRatingFilter(9)}
-                className={`px-2.5 py-1 transition-colors cursor-pointer ${
-                  minRatingFilter === 9
-                    ? "bg-black text-white"
-                    : "bg-white text-black hover:bg-neutral-100"
-                }`}
-              >
-                9+
-              </button>
-            </div>
-          </div>
-
-          {/* 4. Sort By Field Chip Toggle */}
-          <div className="flex items-center gap-1.5">
-            <span className="font-bold text-[10px] text-neutral-500 shrink-0">
-              SORT:
-            </span>
-            <div className="inline-flex border-2 border-black divide-x-2 divide-black rounded-xs overflow-hidden text-[10px] sm:text-[11px] font-bold uppercase">
-              <button
-                type="button"
-                onClick={() => setSortBy("updated_at")}
-                className={`px-2.5 py-1 transition-colors cursor-pointer ${
-                  sortBy === "updated_at"
-                    ? "bg-black text-white"
-                    : "bg-white text-black hover:bg-neutral-100"
-                }`}
-              >
-                DATE
-              </button>
-              <button
-                type="button"
-                onClick={() => setSortBy("title")}
-                className={`px-2.5 py-1 transition-colors cursor-pointer ${
-                  sortBy === "title"
-                    ? "bg-black text-white"
-                    : "bg-white text-black hover:bg-neutral-100"
-                }`}
-              >
-                TITLE
-              </button>
-              <button
-                type="button"
-                onClick={() => setSortBy("rating")}
-                className={`px-2.5 py-1 transition-colors cursor-pointer ${
-                  sortBy === "rating"
-                    ? "bg-black text-white"
-                    : "bg-white text-black hover:bg-neutral-100"
-                }`}
-              >
-                RATING
-              </button>
-            </div>
-          </div>
-
-          {/* 5. Sort Direction Toggle (Option B: Dedicated Buttons) */}
-          <div className="flex items-center gap-1.5">
-            <span className="font-bold text-[10px] text-neutral-500 shrink-0">
-              DIR:
-            </span>
-            <div className="inline-flex border-2 border-black divide-x-2 divide-black rounded-xs overflow-hidden text-[10px] sm:text-[11px] font-bold uppercase">
-              <button
-                type="button"
-                onClick={() => setSortOrder("desc")}
-                title="Descending (Latest/Highest first)"
-                className={`px-2.5 py-1 transition-colors cursor-pointer ${
-                  sortOrder === "desc"
-                    ? "bg-black text-white"
-                    : "bg-white text-black hover:bg-neutral-100"
-                }`}
-              >
-                DESC ↓
-              </button>
-              <button
-                type="button"
-                onClick={() => setSortOrder("asc")}
-                title="Ascending (Earliest/Lowest first)"
-                className={`px-2.5 py-1 transition-colors cursor-pointer ${
-                  sortOrder === "asc"
-                    ? "bg-black text-white"
-                    : "bg-white text-black hover:bg-neutral-100"
-                }`}
-              >
-                ASC ↑
-              </button>
-            </div>
+        {/* 2. Media Type Toggle */}
+        <div className="space-y-1">
+          <span className="block text-[10px] font-mono font-medium uppercase text-stone-500 tracking-wider">
+            MEDIA TYPE
+          </span>
+          <div className="grid grid-cols-3 border border-stone-300 divide-x divide-stone-300 rounded-md overflow-hidden text-xs sm:text-sm font-mono uppercase text-center bg-stone-50 shadow-sm">
+            <button
+              type="button"
+              onClick={() => setMediaTypeFilter("all")}
+              className={`py-2 cursor-pointer transition-colors ${
+                mediaTypeFilter === "all"
+                  ? "bg-stone-800 text-white font-medium"
+                  : "bg-stone-50 text-stone-600 hover:bg-stone-100"
+              }`}
+            >
+              ALL
+            </button>
+            <button
+              type="button"
+              onClick={() => setMediaTypeFilter("movie")}
+              className={`py-2 cursor-pointer transition-colors ${
+                mediaTypeFilter === "movie"
+                  ? "bg-stone-800 text-white font-medium"
+                  : "bg-stone-50 text-stone-600 hover:bg-stone-100"
+              }`}
+            >
+              MOVIES
+            </button>
+            <button
+              type="button"
+              onClick={() => setMediaTypeFilter("tv")}
+              className={`py-2 cursor-pointer transition-colors ${
+                mediaTypeFilter === "tv"
+                  ? "bg-stone-800 text-white font-medium"
+                  : "bg-stone-50 text-stone-600 hover:bg-stone-100"
+              }`}
+            >
+              TV
+            </button>
           </div>
         </div>
-      </section>
 
-      {/* Responsive CSS Grid of Unified Media Cards */}
-      {filteredAndSortedItems.length === 0 ? (
-        <section className="border-2 border-black bg-white p-8 text-center text-xs uppercase space-y-2">
-          <div className="font-bold">
-            NO MEDIA IN {VIEW_LABELS[activeView]}.
+        {/* 3. Minimum Rating Filter */}
+        <div className="space-y-1">
+          <span className="block text-[10px] font-mono font-medium uppercase text-stone-500 tracking-wider">
+            MINIMUM RATING
+          </span>
+          <div className="grid grid-cols-4 border border-stone-300 divide-x divide-stone-300 rounded-md overflow-hidden text-xs sm:text-sm font-mono uppercase text-center bg-stone-50 shadow-sm">
+            {[0, 7, 8, 9].map((val) => (
+              <button
+                key={val}
+                type="button"
+                onClick={() => setMinRatingFilter(val)}
+                className={`py-2 cursor-pointer transition-colors ${
+                  minRatingFilter === val
+                    ? "bg-stone-800 text-white font-medium"
+                    : "bg-stone-50 text-stone-600 hover:bg-stone-100"
+                }`}
+              >
+                {val === 0 ? "ALL" : `${val}+`}
+              </button>
+            ))}
           </div>
-          <div className="text-neutral-600">
-            USE THE SEARCH BAR ABOVE TO FIND AND ADD MOVIES OR TV SHOWS.
+        </div>
+
+        {/* 4. Sort By Field */}
+        <div className="space-y-1">
+          <span className="block text-[10px] font-mono font-medium uppercase text-stone-500 tracking-wider">
+            SORT FIELD
+          </span>
+          <div className="grid grid-cols-3 border border-stone-300 divide-x divide-stone-300 rounded-md overflow-hidden text-xs sm:text-sm font-mono uppercase text-center bg-stone-50 shadow-sm">
+            <button
+              type="button"
+              onClick={() => setSortBy("title")}
+              className={`py-2 cursor-pointer transition-colors ${
+                sortBy === "title"
+                  ? "bg-stone-800 text-white font-medium"
+                  : "bg-stone-50 text-stone-600 hover:bg-stone-100"
+              }`}
+            >
+              TITLE
+            </button>
+            <button
+              type="button"
+              onClick={() => setSortBy("updated_at")}
+              className={`py-2 cursor-pointer transition-colors ${
+                sortBy === "updated_at"
+                  ? "bg-stone-800 text-white font-medium"
+                  : "bg-stone-50 text-stone-600 hover:bg-stone-100"
+              }`}
+            >
+              DATE
+            </button>
+            <button
+              type="button"
+              onClick={() => setSortBy("rating")}
+              className={`py-2 cursor-pointer transition-colors ${
+                sortBy === "rating"
+                  ? "bg-stone-800 text-white font-medium"
+                  : "bg-stone-50 text-stone-600 hover:bg-stone-100"
+              }`}
+            >
+              RATING
+            </button>
           </div>
-        </section>
-      ) : (
-        <section className={MEDIA_GRID_CLASS}>
-          {filteredAndSortedItems.map((item) => (
-            <MediaCard
-              key={item.tmdb_id}
-              media={item}
-              onStateChange={handleCardStateChange}
-            />
-          ))}
-        </section>
-      )}
+        </div>
+
+        {/* 5. Sort Direction */}
+        <div className="space-y-1">
+          <span className="block text-[10px] font-mono font-medium uppercase text-stone-500 tracking-wider">
+            SORT ORDER
+          </span>
+          <div className="grid grid-cols-2 border border-stone-300 divide-x divide-stone-300 rounded-md overflow-hidden text-xs sm:text-sm font-mono uppercase text-center bg-stone-50 shadow-sm">
+            <button
+              type="button"
+              onClick={() => setSortOrder("asc")}
+              className={`py-2 cursor-pointer transition-colors ${
+                sortOrder === "asc"
+                  ? "bg-stone-800 text-white font-medium"
+                  : "bg-stone-50 text-stone-600 hover:bg-stone-100"
+              }`}
+            >
+              ASC ↑ (A-Z)
+            </button>
+            <button
+              type="button"
+              onClick={() => setSortOrder("desc")}
+              className={`py-2 cursor-pointer transition-colors ${
+                sortOrder === "desc"
+                  ? "bg-stone-800 text-white font-medium"
+                  : "bg-stone-50 text-stone-600 hover:bg-stone-100"
+              }`}
+            >
+              DESC ↓ (Z-A)
+            </button>
+          </div>
+        </div>
+      </aside>
+
+      {/* =====================================================================
+          RIGHT (80%) FRAME: Responsive Poster Grid
+          ===================================================================== */}
+      <div className="flex-1 min-w-0 w-full">
+        {items.length === 0 ? (
+          <section className="border border-stone-300 rounded-md bg-stone-50 p-8 sm:p-12 text-center space-y-4 shadow-sm">
+            <div className="font-mono text-xs text-stone-500 uppercase font-medium tracking-widest">
+              [ TRACKER INITIALIZED • ZERO ENTRIES ]
+            </div>
+            <h2 className="font-serif text-2xl sm:text-3xl text-stone-900 font-bold tracking-tight">
+              Your Media Library is Empty
+            </h2>
+            <p className="max-w-md mx-auto text-xs sm:text-sm font-sans text-stone-600 leading-relaxed">
+              Use the search bar above to start tracking movies and TV shows to build your archive and receive recommendations.
+            </p>
+            <div className="pt-2 flex justify-center">
+              <Link
+                href="/search"
+                className="inline-flex items-center gap-2 px-5 py-2.5 bg-orange-700 hover:bg-orange-800 text-white font-sans text-xs uppercase tracking-wider font-medium rounded-md shadow-sm transition-colors cursor-pointer"
+              >
+                ➔ Search Titles to Track
+              </Link>
+            </div>
+          </section>
+        ) : filteredAndSortedItems.length === 0 ? (
+          <section className="border border-stone-300 rounded-md bg-stone-50 p-8 text-center text-xs space-y-2 shadow-sm text-stone-600 font-sans">
+            <div className="font-medium text-stone-800">
+              No media matches found in {VIEW_LABELS[activeView]}.
+            </div>
+            <div className="text-stone-500">
+              Adjust or reset your filters on the left to view titles.
+            </div>
+          </section>
+        ) : (
+          <section className={MEDIA_GRID_CLASS}>
+            {filteredAndSortedItems.map((item) => (
+              <MediaCard
+                key={item.tmdb_id}
+                media={item}
+                onStateChange={handleCardStateChange}
+              />
+            ))}
+          </section>
+        )}
+      </div>
     </div>
   );
 }
-
