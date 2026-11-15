@@ -1,17 +1,6 @@
 "use client";
 
-import React, {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  useTransition,
-} from "react";
-import Link from "next/link";
 import { getDiscoveryRecommendationsAction } from "@/app/actions/media";
-import { FilmIcon, TvIcon } from "@/components/Icons";
-import MediaCard from "@/components/MediaCard";
 import {
   FilterSearchInput,
   FilterSection,
@@ -20,14 +9,32 @@ import {
   SegmentedControl,
 } from "@/components/FilterSidebar";
 import {
+  ProjectorIcon,
+  TvIcon,
+} from "@/components/Icons";
+import LoadingSpinner from "@/components/LoadingSpinner";
+import MediaCard from "@/components/MediaCard";
+import MediaListItem from "@/components/MediaListItem";
+import ViewModeToggle, { useViewMode } from "@/components/ViewModeToggle";
+import {
   DISCOVERY_ERAS,
   DISCOVERY_GENRES,
   DiscoveryEngineResult,
   DiscoveryViewProps,
   MEDIA_GRID_CLASS,
+  MEDIA_LIST_CLASS,
   MediaType,
   MergedMediaItem,
 } from "@/types";
+import Link from "next/link";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useTransition,
+} from "react";
 
 export default function DiscoveryView({
   initialData,
@@ -40,11 +47,13 @@ export default function DiscoveryView({
   const [mediaType, setMediaType] = useState<MediaType>(initialMediaType);
   const [selectedGenre, setSelectedGenre] = useState<string>(initialGenre);
   const [selectedDecade, setSelectedDecade] = useState<string>(initialDecade);
+  const [minRatingFilter, setMinRatingFilter] = useState<number>(0);
   const [localTitleFilter, setLocalTitleFilter] = useState<string>("");
   const [currentSeedId, setCurrentSeedId] = useState<number | undefined>(
     seedId,
   );
   const [isPending, startTransition] = useTransition();
+  const [viewMode, setViewMode] = useViewMode();
 
   // Infinite Scroll Pagination State (loads 20 more as user reaches bottom)
   const [page, setPage] = useState<number>(1);
@@ -61,6 +70,7 @@ export default function DiscoveryView({
     setSelectedGenre(initialGenre);
     setSelectedDecade(initialDecade);
     setCurrentSeedId(seedId);
+    setMinRatingFilter(0);
     setLocalTitleFilter("");
     setPage(1);
     setHasMore(true);
@@ -196,7 +206,7 @@ export default function DiscoveryView({
     setMediaType(nextType);
     setCurrentSeedId(undefined);
     updateUrl(nextType, selectedGenre, selectedDecade);
-    loadRecommendations({ mediaType: nextType, seedId: null, shuffle: true });
+    loadRecommendations({ mediaType: nextType, seedId: null });
   }
 
   // Handle Decade / Era change
@@ -213,20 +223,11 @@ export default function DiscoveryView({
     loadRecommendations({ genreKey: nextGenre });
   }
 
-  // "I'M FEELING LUCKY" button: pick another random 8+ rated title to re-seed
-  function handleShuffleSeed() {
-    loadRecommendations({
-      shuffle: true,
-      currentSeedId: data.seed?.id,
-      seedId: null,
-    });
-  }
-
-  // Reset to full Auto-Pilot
-  function handleResetAutoPilot() {
+  // Clear active seed from 'FIND SIMILAR' and return to general discovery with active filters
+  function handleClearSeed() {
     setCurrentSeedId(undefined);
     updateUrl(mediaType, selectedGenre, selectedDecade);
-    loadRecommendations({ seedId: null, shuffle: true });
+    loadRecommendations({ seedId: null });
   }
 
   // Live state updates on media cards
@@ -242,19 +243,30 @@ export default function DiscoveryView({
     });
   }
 
-  // Local title filter filtering
+  // Local title and rating filtering
   const filteredItems = useMemo(() => {
-    const suggestions = data.suggestions ?? [];
+    let suggestions = data.suggestions ?? [];
+    if (minRatingFilter > 0) {
+      suggestions = suggestions.filter(
+        (m) => (m.tmdb_rating ?? 0) >= minRatingFilter,
+      );
+    }
     const query = localTitleFilter.trim().toLowerCase();
-    if (!query) return suggestions;
-    return suggestions.filter((m) => m.title.toLowerCase().includes(query));
-  }, [data.suggestions, localTitleFilter]);
+    if (query) {
+      suggestions = suggestions.filter((m) =>
+        m.title.toLowerCase().includes(query),
+      );
+    }
+    return [...suggestions].sort(
+      (a, b) => (b.tmdb_rating ?? 0) - (a.tmdb_rating ?? 0),
+    );
+  }, [data.suggestions, minRatingFilter, localTitleFilter]);
 
   const activeSeed = data.seed;
-  const isUrlSeeded = Boolean(activeSeed?.isUrlSeed);
+  const isSeeded = Boolean(currentSeedId || (activeSeed && activeSeed.id > 0));
 
   return (
-    <div className="flex flex-col lg:flex-row gap-5 sm:gap-6 items-start w-full">
+    <div className="flex w-full flex-col items-start gap-5 sm:gap-6 lg:flex-row">
       {/* =========================================================================
           LEFT (20%) FRAME: High-Pop Minimalist Discovery Filter Console
           ========================================================================= */}
@@ -265,178 +277,241 @@ export default function DiscoveryView({
           count={filteredItems.length}
         />
 
-        {/* 1. Engine Switcher: Movies vs TV Shows */}
-        <SegmentedControl
-          value={mediaType}
-          onChange={(val) => handleTypeSwitch(val)}
-          options={[
-            {
-              value: "movie",
-              label: (
-                <span className="flex items-center justify-center gap-1.5 font-bold">
-                  <FilmIcon className="w-4.5 h-4.5 shrink-0" />
-                  <span>MOVIES</span>
-                </span>
-              ),
-            },
-            {
-              value: "tv",
-              label: (
-                <span className="flex items-center justify-center gap-1.5 font-bold">
-                  <TvIcon className="w-4.5 h-4.5 shrink-0" />
-                  <span>TV SHOWS</span>
-                </span>
-              ),
-            },
-          ]}
-        />
-
-        {/* 2. Seed Block ("Similar to {Title}" + "I'M FEELING LUCKY" text button) */}
-        <div className="p-4 bg-[#F4F3F0] rounded-2xl space-y-2">
-          <span className="text-xs font-mono uppercase font-bold text-zinc-600 block leading-none">
-            RECOMMENDATIONS:
-          </span>
-          <div className="flex items-baseline justify-between gap-1.5">
-            <span className="font-sans text-xs sm:text-sm font-bold tracking-tight text-zinc-950 truncate">
-              SIMILAR TO{" "}
-              {activeSeed?.title ||
-                (mediaType === "movie" ? "TOP MOVIES" : "TOP SHOWS")}
-            </span>
-            {isUrlSeeded && (
-              <button
-                type="button"
-                onClick={handleResetAutoPilot}
-                className="text-xs font-mono font-bold text-zinc-600 hover:text-zinc-950 underline cursor-pointer shrink-0"
-                title="Switch back to top-rated auto-pilot"
-              >
-                RESET ✕
-              </button>
-            )}
-          </div>
-          <button
-            type="button"
-            onClick={handleShuffleSeed}
-            disabled={isPending}
-            className="text-xs font-mono font-black uppercase text-[#FF7A50] hover:brightness-90 underline flex items-center gap-1 cursor-pointer pt-0.5 transition-colors"
-            title="Pick another random 8+ rated title to seed recommendations"
-          >
-            <span>➔ I&apos;M FEELING LUCKY (NEW SEED)</span>
-          </button>
-        </div>
-
-        {/* 3. Filter by Title */}
+        {/* 1. Title Filter Input */}
         <div>
           <FilterSearchInput
             id="discovery-title-filter"
             value={localTitleFilter}
             onChange={(e) => setLocalTitleFilter(e.target.value)}
-            placeholder={`FILTER ${mediaType === "movie" ? "MOVIES" : "SHOWS"}...`}
+            placeholder="FILTER TITLES..."
           />
         </div>
 
-        {/* 4. Release Era Filter */}
-        <FilterSection label="RELEASE ERA">
-          <div className="grid grid-cols-2 gap-1.5 text-xs sm:text-sm font-mono uppercase">
-            {DISCOVERY_ERAS.map((era) => {
-              const isActive = selectedDecade === era.key;
-              return (
-                <button
-                  key={era.key}
-                  type="button"
-                  onClick={() => handleDecadeChange(era.key)}
-                  disabled={isPending}
-                  className={`py-2 px-2 rounded-xl transition-all cursor-pointer text-center truncate font-bold ${
-                    isActive
-                      ? "bg-zinc-800 hover:bg-zinc-700 text-white shadow-sm"
-                      : "bg-[#F4F3F0] text-zinc-600 hover:bg-zinc-200 font-medium"
-                  }`}
-                >
-                  {era.label}
-                </button>
-              );
-            })}
-          </div>
+        {/* 2. Media Type Toggle */}
+        <FilterSection label="MEDIA TYPE">
+          <SegmentedControl
+            value={mediaType}
+            onChange={(val) => handleTypeSwitch(val as MediaType)}
+            options={[
+              {
+                value: "movie",
+                label: (
+                  <span className="flex items-center justify-center gap-1.5 font-bold">
+                    <ProjectorIcon className="h-4 w-4 shrink-0 text-black stroke-[2.2]" />
+                    <span>MOVIES</span>
+                  </span>
+                ),
+              },
+              {
+                value: "tv",
+                label: (
+                  <span className="flex items-center justify-center gap-1.5 font-bold">
+                    <TvIcon className="h-4 w-4 shrink-0 text-black stroke-[2.2]" />
+                    <span>TV</span>
+                  </span>
+                ),
+              },
+            ]}
+          />
         </FilterSection>
 
-        {/* 5. Genre Filter */}
-        <FilterSection label="GENRE">
-          <div className="grid grid-cols-2 gap-1.5 text-xs sm:text-sm font-mono uppercase">
-            {DISCOVERY_GENRES.map((g) => {
-              const isActive = selectedGenre === g.key;
-              return (
-                <button
-                  key={g.key}
-                  type="button"
-                  onClick={() => handleGenreChange(g.key)}
-                  disabled={isPending}
-                  className={`py-2 px-1.5 rounded-xl transition-all cursor-pointer text-center truncate font-bold ${
-                    isActive
-                      ? "bg-zinc-800 hover:bg-zinc-700 text-white shadow-sm"
-                      : "bg-[#F4F3F0] text-zinc-600 hover:bg-zinc-200 font-medium"
-                  }`}
-                >
-                  {g.label}
-                </button>
-              );
-            })}
-          </div>
-        </FilterSection>
+        {/* Seed Mode Quick Escape (when arrived via 'FIND SIMILAR') */}
+        {isSeeded && (
+          <button
+            type="button"
+            onClick={handleClearSeed}
+            className="flex w-full cursor-pointer items-center justify-center gap-2 rounded-2xl border border-zinc-300 bg-white p-3 font-mono text-xs font-bold text-zinc-950 shadow-sm transition-all duration-150 hover:bg-zinc-800 hover:border-zinc-800 hover:text-white hover:scale-[1.01] active:scale-[0.99]"
+            title="Switch from similar title recommendations to popular & high-rated discovery"
+          >
+            <span>➔ EXPLORE POPULAR &amp; HIGH-RATED</span>
+          </button>
+        )}
+
+        {/* 3. Minimum TMDB Rating Filter (disabled in seeded mode) */}
+        <div
+          className={
+            isSeeded
+              ? "opacity-35 pointer-events-none select-none transition-opacity"
+              : "transition-opacity"
+          }
+        >
+          <FilterSection label="MINIMUM TMDB RATING">
+            <SegmentedControl
+              value={minRatingFilter}
+              onChange={setMinRatingFilter}
+              columns={4}
+              options={[
+                { value: 0, label: "ALL" },
+                { value: 7, label: "7+" },
+                { value: 8, label: "8+" },
+                { value: 9, label: "9+" },
+              ]}
+            />
+          </FilterSection>
+        </div>
+
+        {/* 4. Release Era Filter (disabled/greyed out in seeded mode) */}
+        <div
+          className={
+            isSeeded
+              ? "opacity-35 pointer-events-none select-none transition-opacity"
+              : "transition-opacity"
+          }
+        >
+          <FilterSection label="RELEASE ERA">
+            <div className="grid grid-cols-2 gap-1.5 font-mono text-xs uppercase sm:text-sm">
+              {DISCOVERY_ERAS.map((era) => {
+                const isActive = selectedDecade === era.key;
+                return (
+                  <button
+                    key={era.key}
+                    type="button"
+                    onClick={() => handleDecadeChange(era.key)}
+                    disabled={isPending || isSeeded}
+                    className={`cursor-pointer truncate rounded-xl px-2 py-2 text-center font-bold transition-all ${
+                      isActive
+                        ? "bg-zinc-800 text-white shadow-sm hover:bg-zinc-700"
+                        : "bg-canvas font-medium text-zinc-600 hover:bg-zinc-200"
+                    }`}
+                  >
+                    {era.label}
+                  </button>
+                );
+              })}
+            </div>
+          </FilterSection>
+        </div>
+
+        {/* 5. Genre Filter (disabled/greyed out in seeded mode) */}
+        <div
+          className={
+            isSeeded
+              ? "opacity-35 pointer-events-none select-none transition-opacity"
+              : "transition-opacity"
+          }
+        >
+          <FilterSection label="GENRE">
+            <div className="grid grid-cols-2 gap-1.5 font-mono text-xs uppercase sm:text-sm">
+              {DISCOVERY_GENRES.map((g) => {
+                const isActive = selectedGenre === g.key;
+                return (
+                  <button
+                    key={g.key}
+                    type="button"
+                    onClick={() => handleGenreChange(g.key)}
+                    disabled={isPending || isSeeded}
+                    className={`cursor-pointer truncate rounded-xl px-1.5 py-2 text-center font-bold transition-all ${
+                      isActive
+                        ? "bg-zinc-800 text-white shadow-sm hover:bg-zinc-700"
+                        : "bg-canvas font-medium text-zinc-600 hover:bg-zinc-200"
+                    }`}
+                  >
+                    {g.label}
+                  </button>
+                );
+              })}
+            </div>
+          </FilterSection>
+        </div>
       </FilterSidebar>
 
       {/* =========================================================================
-          RIGHT (80%) FRAME: Responsive Poster Grid / Empty State
+          RIGHT (80%) FRAME: Responsive Poster Grid / List View / Empty State
           ========================================================================= */}
-      <div className="flex-1 min-w-0 w-full space-y-4">
+      <div className="w-full min-w-0 flex-1 space-y-4">
+        {/* Unified Header Strip: Context Title & Count (Left) + Quick Layout Mode Pill (Right) */}
+        {!data.noRatedMedia && filteredItems.length > 0 && (
+          <div className="flex items-center justify-between gap-3 px-1">
+            <div className="flex items-center gap-2 min-w-0">
+              <span className="truncate font-mono text-xs font-bold tracking-wider text-zinc-500 uppercase">
+                {isSeeded && activeSeed ? (
+                  <>
+                    SIMILAR TO{" "}
+                    <span className="font-black text-zinc-900">
+                      {activeSeed.title.toUpperCase()}
+                    </span>{" "}
+                    ({filteredItems.length}{" "}
+                    {filteredItems.length === 1 ? "TITLE" : "TITLES"})
+                  </>
+                ) : (
+                  <>
+                    POPULAR &amp; HIGH-RATED{" "}
+                    <span className="font-black text-zinc-900">
+                      {mediaType === "movie" ? "MOVIES" : "TV SHOWS"}
+                    </span>{" "}
+                    ({filteredItems.length}{" "}
+                    {filteredItems.length === 1 ? "TITLE" : "TITLES"})
+                  </>
+                )}
+              </span>
+            </div>
+
+            {/* Quick Layout Mode Pill Toggle */}
+            <ViewModeToggle viewMode={viewMode} onChange={setViewMode} />
+          </div>
+        )}
+
         {data.noRatedMedia && !activeSeed ? (
-          <section className="rounded-2xl bg-white p-8 sm:p-12 text-center space-y-4 shadow-[0_8px_30px_rgb(0,0,0,0.04)] ring-1 ring-black/5">
-            <div className="font-mono text-xs text-zinc-700 uppercase font-bold tracking-widest">
+          <section className="space-y-4 rounded-2xl bg-white p-8 text-center shadow-[0_8px_30px_rgb(0,0,0,0.04)] ring-1 ring-black/5 sm:p-12">
+            <div className="font-mono text-xs font-bold tracking-widest text-zinc-700 uppercase">
               [ RECOMMENDATION RADAR STANDBY ]
             </div>
-            <h2 className="font-sans text-2xl sm:text-3xl text-zinc-950 font-bold tracking-tight">
+            <h2 className="font-sans text-2xl font-bold tracking-tight text-zinc-950 sm:text-3xl">
               No Rated {mediaType === "movie" ? "Movies" : "TV Shows"} in Your
               Library
             </h2>
-            <p className="max-w-md mx-auto text-xs sm:text-sm font-sans text-zinc-700 leading-relaxed font-medium">
+            <p className="mx-auto max-w-md font-sans text-xs leading-relaxed font-medium text-zinc-700 sm:text-sm">
               Rate some {mediaType === "movie" ? "movies" : "TV shows"} in your
               library to start getting personalized recommendations.
             </p>
             <div className="pt-2">
               <Link
                 href="/search"
-                className="inline-flex items-center gap-2 px-6 py-3 bg-[#FF7A50] hover:brightness-95 text-zinc-950 font-sans text-xs uppercase tracking-wider font-black rounded-xl shadow-md shadow-orange-500/20 transition-all cursor-pointer active:scale-95"
+                className="bg-coral inline-flex cursor-pointer items-center gap-2 rounded-xl px-6 py-3 font-sans text-xs font-black tracking-wider text-zinc-950 uppercase shadow-md shadow-orange-500/20 transition-all hover:brightness-95 active:scale-95"
               >
                 ➔ Search Titles to Track &amp; Rate
               </Link>
             </div>
           </section>
         ) : filteredItems.length === 0 ? (
-          <div className="rounded-2xl p-8 bg-white text-center text-xs text-zinc-700 space-y-2 shadow-[0_8px_30px_rgb(0,0,0,0.04)] font-sans ring-1 ring-black/5">
-            <div className="font-bold text-zinc-950 text-sm">
+          <div className="space-y-2 rounded-2xl bg-white p-8 text-center font-sans text-xs text-zinc-700 shadow-[0_8px_30px_rgb(0,0,0,0.04)] ring-1 ring-black/5">
+            <div className="text-sm font-bold text-zinc-950">
               NO RECOMMENDATIONS FOUND MATCHING THESE FILTERS.
             </div>
-            <div className="text-zinc-600 font-medium">
-              Try switching the era, selecting &quot;All Genres&quot;, or
+            <div className="font-medium text-zinc-600">
+              Try lowering the minimum rating, switching the era, selecting &quot;All Genres&quot;, or
               clicking &quot;I&apos;m Feeling Lucky&quot;.
             </div>
           </div>
         ) : (
           <>
-            <div className={MEDIA_GRID_CLASS}>
-              {filteredItems.map((item) => (
-                <MediaCard
-                  key={`${mediaType}-${item.tmdb_id}`}
-                  media={item}
-                  onStateChange={handleCardStateChange}
-                />
-              ))}
-            </div>
+            {viewMode === "list" ? (
+              <div className={MEDIA_LIST_CLASS}>
+                {filteredItems.map((item) => (
+                  <MediaListItem
+                    key={`${mediaType}-${item.tmdb_id}`}
+                    media={item}
+                    onStateChange={handleCardStateChange}
+                  />
+                ))}
+              </div>
+            ) : (
+              <div className={MEDIA_GRID_CLASS}>
+                {filteredItems.map((item) => (
+                  <MediaCard
+                    key={`${mediaType}-${item.tmdb_id}`}
+                    media={item}
+                    onStateChange={handleCardStateChange}
+                  />
+                ))}
+              </div>
+            )}
 
             {/* Sentinel for Infinite Scroll (20 more on scroll) */}
             <div ref={sentinelRef} className="h-6 w-full" aria-hidden="true" />
             {isLoadingMore && (
-              <div className="p-4 text-center font-mono text-xs uppercase text-zinc-600 font-medium flex items-center justify-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-zinc-700 animate-pulse" />
-                <span>LOADING 20 MORE RECOMMENDATIONS...</span>
+              <div className="flex items-center justify-center py-6">
+                <LoadingSpinner size="md" />
               </div>
             )}
           </>

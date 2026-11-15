@@ -1,15 +1,28 @@
 "use client";
 
-import React, { useState, useMemo } from "react";
-import MediaCard from "@/components/MediaCard";
 import {
+  FilterSearchInput,
+  FilterSection,
   FilterSidebar,
   FilterSidebarHeader,
-  FilterSection,
-  FilterSearchInput,
   SegmentedControl,
 } from "@/components/FilterSidebar";
-import { MEDIA_GRID_CLASS, MergedMediaItem, MediaType, SearchResultsPaneProps } from "@/types";
+import {
+  FilmIcon,
+  ProjectorIcon,
+  TvIcon,
+} from "@/components/Icons";
+import MediaCard from "@/components/MediaCard";
+import MediaListItem from "@/components/MediaListItem";
+import ViewModeToggle, { useViewMode } from "@/components/ViewModeToggle";
+import {
+  MEDIA_GRID_CLASS,
+  MEDIA_LIST_CLASS,
+  MediaType,
+  MergedMediaItem,
+  SearchResultsPaneProps,
+} from "@/types";
+import { useEffect, useMemo, useState } from "react";
 
 export default function SearchResultsPane({
   query,
@@ -24,19 +37,55 @@ export default function SearchResultsPane({
   }
 
   const [localTitleFilter, setLocalTitleFilter] = useState("");
-  const [mediaTypeFilter, setMediaTypeFilter] = useState<"all" | MediaType>("all");
+  const [mediaTypeFilter, setMediaTypeFilter] = useState<"all" | MediaType>(
+    "all",
+  );
   const [libraryStatusFilter, setLibraryStatusFilter] = useState<
     "all" | "tracked" | "untracked"
   >("all");
   const [sortBy, setSortBy] = useState<"relevance" | "release_date" | "title">(
-    "relevance"
+    "relevance",
   );
   const [sortOrder, setSortOrder] = useState<"desc" | "asc">("desc");
+  const [viewMode, setViewMode] = useViewMode();
+
+  // When query is empty (e.g. navigated directly via SEARCH tab in header), auto-focus the global search bar
+  useEffect(() => {
+    if (query.length === 0) {
+      const searchInput = document.getElementById(
+        "global-search-input",
+      ) as HTMLInputElement | null;
+      if (searchInput) {
+        searchInput.focus();
+      }
+    }
+  }, [query]);
+
+  const sortOrderLabels = useMemo(() => {
+    switch (sortBy) {
+      case "title":
+        return { asc: "ASC ↑ (A-Z)", desc: "DESC ↓ (Z-A)" };
+      case "release_date":
+        return { asc: "OLDEST ↑", desc: "NEWEST ↓" };
+      case "relevance":
+      default:
+        return { asc: "LOWEST ↑", desc: "HIGHEST ↓" };
+    }
+  }, [sortBy]);
 
   function handleMediaStateChange(updated: MergedMediaItem) {
     setItems((prev) =>
-      prev.map((item) => (item.tmdb_id === updated.tmdb_id ? updated : item))
+      prev.map((item) => (item.tmdb_id === updated.tmdb_id ? updated : item)),
     );
+  }
+
+  function handleSortByChange(newSort: "relevance" | "release_date" | "title") {
+    setSortBy(newSort);
+    if (newSort === "title") {
+      setSortOrder("asc");
+    } else {
+      setSortOrder("desc");
+    }
   }
 
   const filteredAndSortedItems = useMemo(() => {
@@ -73,14 +122,25 @@ export default function SearchResultsPane({
           return sortOrder === "asc" ? indexB - indexA : indexA - indexB;
         }
 
-        let comparison = 0;
         if (sortBy === "release_date") {
-          comparison = (a.release_date || "").localeCompare(b.release_date || "");
-        } else if (sortBy === "title") {
-          comparison = a.title.localeCompare(b.title);
+          const dateA = a.release_date || a.next_air_date || "";
+          const dateB = b.release_date || b.next_air_date || "";
+          if (!dateA && !dateB) {
+            return a.title.localeCompare(b.title);
+          }
+          if (!dateA) return 1;
+          if (!dateB) return -1;
+          const comparison = dateA.localeCompare(dateB);
+          if (comparison === 0) return a.title.localeCompare(b.title);
+          return sortOrder === "asc" ? comparison : -comparison;
         }
 
-        return sortOrder === "asc" ? comparison : -comparison;
+        if (sortBy === "title") {
+          const comparison = a.title.localeCompare(b.title);
+          return sortOrder === "asc" ? comparison : -comparison;
+        }
+
+        return 0;
       });
   }, [
     items,
@@ -92,7 +152,7 @@ export default function SearchResultsPane({
   ]);
 
   return (
-    <div className="flex flex-col lg:flex-row gap-5 sm:gap-6 items-start w-full">
+    <div className="flex w-full flex-col items-start gap-5 sm:gap-6 lg:flex-row">
       {/* =====================================================================
           LEFT (20%) FRAME: Search Filter Sidebar Console
           ===================================================================== */}
@@ -105,17 +165,17 @@ export default function SearchResultsPane({
 
         {/* Query Status Callout */}
         {query ? (
-          <div className="p-3 bg-[#F4F3F0] rounded-xl flex items-center justify-between gap-2">
-            <span className="text-[11px] font-mono font-bold text-zinc-500 uppercase tracking-wider">
+          <div className="flex items-center justify-between gap-2 rounded-xl bg-canvas p-3">
+            <span className="font-mono text-[11px] font-bold tracking-wider text-zinc-500 uppercase">
               QUERY:
             </span>
-            <span className="text-xs font-mono font-black text-zinc-900 truncate">
+            <span className="truncate font-mono text-xs font-black text-zinc-900">
               &ldquo;{query}&rdquo;
             </span>
           </div>
         ) : (
-          <div className="p-3 bg-[#F4F3F0] rounded-xl text-center">
-            <span className="text-[11px] font-mono font-bold text-zinc-500 uppercase tracking-wider">
+          <div className="rounded-xl bg-canvas p-3 text-center">
+            <span className="font-mono text-[11px] font-bold tracking-wider text-zinc-500 uppercase">
               NO ACTIVE QUERY
             </span>
           </div>
@@ -137,9 +197,33 @@ export default function SearchResultsPane({
             value={mediaTypeFilter}
             onChange={setMediaTypeFilter}
             options={[
-              { value: "all", label: "ALL" },
-              { value: "movie", label: "MOVIES" },
-              { value: "tv", label: "TV" },
+              {
+                value: "all",
+                label: (
+                  <span className="flex items-center justify-center gap-1 font-bold">
+                    <FilmIcon className="h-4 w-4 shrink-0" />
+                    <span>ALL</span>
+                  </span>
+                ),
+              },
+              {
+                value: "movie",
+                label: (
+                  <span className="flex items-center justify-center gap-1 font-bold">
+                    <ProjectorIcon className="h-4 w-4 shrink-0" />
+                    <span>MOVIES</span>
+                  </span>
+                ),
+              },
+              {
+                value: "tv",
+                label: (
+                  <span className="flex items-center justify-center gap-1 font-bold">
+                    <TvIcon className="h-4 w-4 shrink-0" />
+                    <span>TV</span>
+                  </span>
+                ),
+              },
             ]}
           />
         </FilterSection>
@@ -161,7 +245,7 @@ export default function SearchResultsPane({
         <FilterSection label="SORT FIELD">
           <SegmentedControl
             value={sortBy}
-            onChange={setSortBy}
+            onChange={handleSortByChange}
             options={[
               { value: "relevance", label: "RELEVANCE" },
               { value: "release_date", label: "DATE" },
@@ -176,24 +260,47 @@ export default function SearchResultsPane({
             value={sortOrder}
             onChange={setSortOrder}
             options={[
-              { value: "desc", label: "DESC ↓" },
-              { value: "asc", label: "ASC ↑" },
+              { value: "asc", label: sortOrderLabels.asc },
+              { value: "desc", label: sortOrderLabels.desc },
             ]}
           />
         </FilterSection>
       </FilterSidebar>
 
       {/* =====================================================================
-          RIGHT (80%) FRAME: Responsive Poster Grid / Fallbacks
+          RIGHT (80%) FRAME: Responsive Poster Grid / List View / Fallbacks
           ===================================================================== */}
-      <main className="flex-1 w-full min-w-0">
+      <main className="w-full min-w-0 flex-1 space-y-4">
+        {query.length > 0 && filteredAndSortedItems.length > 0 && (
+          <div className="flex items-center justify-between gap-3 px-1">
+            <span className="font-mono text-xs font-bold tracking-wider text-zinc-500 uppercase">
+              SHOWING {filteredAndSortedItems.length}{" "}
+              {filteredAndSortedItems.length === 1 ? "RESULT" : "RESULTS"}
+            </span>
+
+            {/* Quick Layout Mode Pill Toggle */}
+            <ViewModeToggle viewMode={viewMode} onChange={setViewMode} />
+          </div>
+        )}
+
         {query.length === 0 ? (
-          <section className="rounded-2xl bg-white p-8 sm:p-12 text-center text-xs sm:text-sm font-mono text-zinc-500 shadow-[0_8px_30px_rgb(0,0,0,0.04)] ring-1 ring-black/5">
-            [ TYPE A TITLE OR ACTOR IN THE TOP SEARCH BAR TO QUERY TMDB REPOSITORY ]
+          <section className="rounded-2xl bg-white p-8 text-center font-mono text-xs font-semibold text-zinc-500 uppercase shadow-[0_8px_30px_rgb(0,0,0,0.04)] ring-1 ring-black/5 sm:p-12 sm:text-sm">
+            [ USE THE SEARCH BAR TO FIND A MOVIE OR TV SHOW ]
           </section>
         ) : filteredAndSortedItems.length === 0 ? (
-          <section className="rounded-2xl bg-white p-8 sm:p-12 text-center text-xs sm:text-sm font-mono text-zinc-500 shadow-[0_8px_30px_rgb(0,0,0,0.04)] ring-1 ring-black/5">
-            [ ZERO TMDB / LIBRARY MATCHES RESOLVED FOR &quot;{query}&quot; WITH CURRENT FILTERS ]
+          <section className="rounded-2xl bg-white p-8 text-center font-mono text-xs text-zinc-500 shadow-[0_8px_30px_rgb(0,0,0,0.04)] ring-1 ring-black/5 sm:p-12 sm:text-sm">
+            [ ZERO TMDB / LIBRARY MATCHES RESOLVED FOR &quot;{query}&quot; WITH
+            CURRENT FILTERS ]
+          </section>
+        ) : viewMode === "list" ? (
+          <section className={MEDIA_LIST_CLASS}>
+            {filteredAndSortedItems.map((item) => (
+              <MediaListItem
+                key={`${item.media_type}-${item.tmdb_id}`}
+                media={item}
+                onStateChange={handleMediaStateChange}
+              />
+            ))}
           </section>
         ) : (
           <section className={MEDIA_GRID_CLASS}>

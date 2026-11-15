@@ -1,0 +1,38 @@
+Summarize in your own word what I'm trying to achieve to confirm you understand what I asked. 
+
+What do you think of this approach? If you think it will work well and agree, why? If not, give me your recommendation/options.
+
+
+
+
+Antigravity IDE Prompt: KURA Codebase Cleanup & Refactoring
+
+Execute a comprehensive codebase optimization and refactoring pass on the KURA repository. The project has undergone multiple UI pivots, resulting in legacy code that must be purged. Follow these strict directives:
+
+1. Tailwind CSS Purge & Optimization
+
+Scour all components and pages for conflicting or redundant Tailwind classes (e.g., having both flex and grid, or conflicting text colors on the same element).
+
+Hunt down and delete all lingering CSS classes from previous design phases. Specifically target and remove zinc-100, stone-* colors, border-2, border-black, rounded-none, and shadow-[4px_4px...].
+
+Ensure the UI strictly adheres to the current Japandi palette: bg-[#F4F3F0] for the canvas, pure white bg-white floating cards, zinc-800 for primary text/active states, and pastel green/terracotta for status accents.
+
+2. Component Consolidation (DRY Principle)
+
+Audit the UI for duplicated elements. If multiple screens use identical filter sidebars, search bars, or status toggle button groups, extract them into reusable components (e.g., components/FilterSidebar.tsx, components/StatusToggle.tsx).
+
+Centralize all TypeScript interfaces. Move inline type declarations (like the TMDB MovieProps or Supabase database schemas) out of individual component files and into a dedicated types/index.ts file. Export and import them where needed.
+
+3. Next.js App Router Optimization
+
+Enforce strict Server vs. Client component boundaries. Ensure that files fetching data directly from Supabase or TMDB do not unnecessarily use the "use client" directive.
+
+Push interactivity (hooks like useState, onClick handlers for the status buttons) down into the lowest possible leaf components (like the buttons themselves or the interactive portion of the Media Card) so the parent layout can remain a fast, static Server Component.
+
+4. Utility Extraction & Dead Code Elimination
+
+Identify repeated logic for data fetching, URL parameter parsing, or date formatting (e.g., extracting the 4-digit year from TMDB dates). Extract these into a lib/utils.ts file.
+
+Delete all unused imports, commented-out legacy code, console logs, and orphaned component files that are no longer referenced in the main application flow.
+
+Audit the Supabase database schema to ensure it is optimized for rapid sorting and filtering.

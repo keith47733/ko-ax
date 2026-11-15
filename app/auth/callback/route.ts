@@ -51,4 +51,3 @@ export async function GET(request: NextRequest) {
   redirectTo.searchParams.set("error", "VERIFICATION_FAILED");
   return NextResponse.redirect(redirectTo);
 }
-

@@ -1,6 +1,7 @@
 import React, { Suspense } from "react";
 import { connection } from "next/server";
 import SearchResultsPane from "@/components/SearchResultsPane";
+import LoadingSpinner from "@/components/LoadingSpinner";
 import { searchAndMergeMedia } from "@/app/actions/media";
 import { SearchPageProps } from "@/types";
 
@@ -24,8 +25,8 @@ export default function SearchPage({ searchParams }: SearchPageProps) {
   return (
     <Suspense
       fallback={
-        <div className="rounded-2xl bg-white p-6 text-xs uppercase font-mono text-zinc-500 shadow-[0_8px_30px_rgb(0,0,0,0.04)]">
-          QUERYING TMDB API &amp; CROSS-REFERENCING SUPABASE user_media...
+        <div className="flex w-full items-center justify-center py-24">
+          <LoadingSpinner size="lg" />
         </div>
       }
     >

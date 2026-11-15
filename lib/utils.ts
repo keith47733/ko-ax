@@ -1,3 +1,5 @@
+import { MediaStatus, SeasonWireframeGroup } from "@/types";
+
 /**
  * Shared utility functions for KURA
  * Extracted for DRY compliance, consistent date handling, and dead-code reduction.
@@ -51,7 +53,10 @@ export function getItemDate(item: {
 /**
  * Formats a calendar banner date (YYYY-MM-DD) into full string and relative distance label.
  */
-export function formatDateBanner(dateStr: string): { full: string; relative: string } {
+export function formatDateBanner(dateStr: string): {
+  full: string;
+  relative: string;
+} {
   try {
     const [year, month, day] = dateStr.split("-").map(Number);
     const dateObj = new Date(year, month - 1, day, 12, 0, 0);
@@ -125,3 +130,49 @@ export function cn(...classes: (string | undefined | null | false)[]): string {
   return classes.filter(Boolean).join(" ");
 }
 
+/**
+ * Calculates the next media watch status based on TV season and episode watch progress.
+ */
+export function calculateNextStatusFromEpisodes(
+  updatedSeasons: SeasonWireframeGroup[],
+  currentStatus: MediaStatus | null,
+  seriesStatus?: string | null,
+): MediaStatus | null {
+  const totalCount = updatedSeasons.reduce(
+    (acc, s) => acc + s.episodes.length,
+    0,
+  );
+  if (totalCount === 0) return currentStatus;
+
+  const watchedCount = updatedSeasons.reduce(
+    (acc, s) => acc + s.episodes.filter((e) => e.watched_boolean).length,
+    0,
+  );
+
+  // 1. All episodes watched
+  if (watchedCount === totalCount) {
+    const sLower = (seriesStatus || "").toLowerCase();
+    const isEnded =
+      sLower === "ended" || sLower === "canceled" || sLower === "cancelled";
+    if (isEnded) {
+      return "watched";
+    }
+    // Ongoing or returning series: caught up, so it is actively watching
+    return "watching";
+  }
+
+  // 2. Partial episodes watched (between 1 and totalCount - 1)
+  if (watchedCount > 0 && watchedCount < totalCount) {
+    return "watching";
+  }
+
+  // 3. 0 episodes watched
+  if (watchedCount === 0) {
+    if (currentStatus === "watched") {
+      return "watching";
+    }
+    return currentStatus;
+  }
+
+  return currentStatus;
+}

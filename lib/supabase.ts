@@ -101,7 +101,7 @@ export function clearWireframeStore(): void {
 export function buildDefaultSeasonsForTv(
   tmdbId: number,
   episodeStateMap: Map<number, UserEpisodeRecord>,
-  seasonCount: number = 2
+  seasonCount: number = 2,
 ): SeasonWireframeGroup[] {
   const count = Math.max(1, Math.min(seasonCount, 30));
   const seasonNumbers = Array.from({ length: count }, (_, i) => i + 1);
@@ -117,9 +117,7 @@ export function buildDefaultSeasonsForTv(
         episode_number: epNum,
         title: `Episode ${epNum}`,
         air_date:
-          seasonNum === 1
-            ? `2024-0${epNum}-10`
-            : `2026-11-0${epNum * 2}`,
+          seasonNum === 1 ? `2024-0${epNum}-10` : `2026-11-0${epNum * 2}`,
         watched_boolean: saved?.watched_boolean ?? false,
         watch_date: saved?.watch_date ?? null,
       };
@@ -134,11 +132,11 @@ export function getMergedSeedItems(): MergedMediaItem[] {
 
   for (const [tmdbId, userMedia] of store.userMedia.entries()) {
     const media = store.media.get(tmdbId);
-    if (!media) continue;
+    if (!media || userMedia.status === null) continue;
 
     const seasons =
       media.media_type === "tv"
-        ? buildDefaultSeasonsForTv(tmdbId, store.userEpisodes)
+        ? (store.seasonsByMedia.get(tmdbId) ?? undefined)
         : undefined;
 
     items.push({
@@ -156,11 +154,11 @@ export function getMergedSeedItems(): MergedMediaItem[] {
       updated_at: userMedia.updated_at,
       seasons,
       tmdb_rating: media.tmdb_rating ?? null,
+      rating_source: "imdb",
     });
   }
 
   return items.sort((a, b) =>
-    (b.updated_at || "").localeCompare(a.updated_at || "")
+    (b.updated_at || "").localeCompare(a.updated_at || ""),
   );
 }
-

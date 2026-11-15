@@ -31,6 +31,8 @@ CREATE TABLE IF NOT EXISTS public.media (
 
 CREATE INDEX IF NOT EXISTS idx_media_media_type ON public.media (media_type);
 CREATE INDEX IF NOT EXISTS idx_media_release_date ON public.media (release_date);
+CREATE INDEX IF NOT EXISTS idx_media_next_air_date ON public.media (next_air_date) WHERE next_air_date IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_media_title_lower ON public.media (LOWER(title));
 
 -- ============================================================================
 -- 3. USER_MEDIA TABLE
@@ -41,7 +43,7 @@ CREATE TABLE IF NOT EXISTS public.user_media (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
   tmdb_id INTEGER NOT NULL REFERENCES public.media(tmdb_id) ON DELETE CASCADE,
-  status TEXT NOT NULL CHECK (status IN ('want_to_watch', 'watching', 'watched')),
+  status TEXT CHECK (status IS NULL OR status IN ('want_to_watch', 'watching', 'watched')),
   rating SMALLINT CHECK (rating IS NULL OR (rating >= 1 AND rating <= 10)),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   UNIQUE (user_id, tmdb_id)
@@ -49,6 +51,8 @@ CREATE TABLE IF NOT EXISTS public.user_media (
 
 CREATE INDEX IF NOT EXISTS idx_user_media_user_status ON public.user_media (user_id, status);
 CREATE INDEX IF NOT EXISTS idx_user_media_tmdb_id ON public.user_media (tmdb_id);
+CREATE INDEX IF NOT EXISTS idx_user_media_user_updated ON public.user_media (user_id, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_user_media_user_rating ON public.user_media (user_id, rating DESC NULLS LAST);
 
 -- Automatically refresh updated_at on row modification
 CREATE OR REPLACE FUNCTION public.set_updated_at()
@@ -89,6 +93,8 @@ CREATE TABLE IF NOT EXISTS public.user_episodes (
 
 CREATE INDEX IF NOT EXISTS idx_user_episodes_user_media ON public.user_episodes (user_id, tmdb_id);
 CREATE INDEX IF NOT EXISTS idx_user_episodes_episode_id ON public.user_episodes (tmdb_episode_id);
+CREATE INDEX IF NOT EXISTS idx_user_episodes_lookup ON public.user_episodes (user_id, tmdb_id, season_number, episode_number);
+CREATE INDEX IF NOT EXISTS idx_user_episodes_watched ON public.user_episodes (user_id, tmdb_id, watched_boolean);
 
 -- ============================================================================
 -- 5. ROW LEVEL SECURITY (RLS) POLICIES

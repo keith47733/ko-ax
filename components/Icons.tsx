@@ -3,7 +3,7 @@ import React from "react";
 export function BookmarkIcon({ className }: { className?: string }) {
   return (
     <svg
-      className={className || "w-5 h-5"}
+      className={className || "h-5 w-5"}
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
@@ -19,7 +19,7 @@ export function BookmarkIcon({ className }: { className?: string }) {
 export function EyeIcon({ className }: { className?: string }) {
   return (
     <svg
-      className={className || "w-5 h-5"}
+      className={className || "h-5 w-5"}
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
@@ -33,10 +33,27 @@ export function EyeIcon({ className }: { className?: string }) {
   );
 }
 
+export function EyeOffIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      className={className || "h-5 w-5"}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" />
+      <line x1="1" y1="1" x2="23" y2="23" />
+    </svg>
+  );
+}
+
 export function CheckCircleIcon({ className }: { className?: string }) {
   return (
     <svg
-      className={className || "w-5 h-5"}
+      className={className || "h-5 w-5"}
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
@@ -53,7 +70,7 @@ export function CheckCircleIcon({ className }: { className?: string }) {
 export function CalendarIcon({ className }: { className?: string }) {
   return (
     <svg
-      className={className || "w-5 h-5"}
+      className={className || "h-5 w-5"}
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
@@ -72,7 +89,7 @@ export function CalendarIcon({ className }: { className?: string }) {
 export function CompassIcon({ className }: { className?: string }) {
   return (
     <svg
-      className={className || "w-5 h-5"}
+      className={className || "h-5 w-5"}
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
@@ -89,10 +106,54 @@ export function CompassIcon({ className }: { className?: string }) {
   );
 }
 
+export function SearchIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      className={className || "h-4 w-4"}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <circle cx="11" cy="11" r="8" />
+      <line x1="21" y1="21" x2="16.65" y2="16.65" />
+    </svg>
+  );
+}
+
+export function ProjectorIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      className={className || "h-4 w-4"}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      {/* Film reels */}
+      <circle cx="7" cy="6" r="3" />
+      <circle cx="7" cy="6" r="1" fill="currentColor" />
+      <circle cx="15" cy="6" r="3" />
+      <circle cx="15" cy="6" r="1" fill="currentColor" />
+      {/* Projector housing */}
+      <rect x="3" y="11" width="14" height="8" rx="1.5" />
+      {/* Projection lens */}
+      <polygon points="17 12 22 10 22 18 17 16" fill="currentColor" opacity="0.3" stroke="currentColor" />
+      {/* Stand feet */}
+      <line x1="6" y1="19" x2="5" y2="21" />
+      <line x1="14" y1="19" x2="15" y2="21" />
+    </svg>
+  );
+}
+
 export function FilmIcon({ className }: { className?: string }) {
   return (
     <svg
-      className={className || "w-4 h-4"}
+      className={className || "h-4 w-4"}
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
@@ -115,7 +176,7 @@ export function FilmIcon({ className }: { className?: string }) {
 export function TvIcon({ className }: { className?: string }) {
   return (
     <svg
-      className={className || "w-4 h-4"}
+      className={className || "h-4 w-4"}
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
@@ -132,7 +193,7 @@ export function TvIcon({ className }: { className?: string }) {
 export function MenuIcon({ className }: { className?: string }) {
   return (
     <svg
-      className={className || "w-5 h-5"}
+      className={className || "h-5 w-5"}
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
@@ -150,7 +211,7 @@ export function MenuIcon({ className }: { className?: string }) {
 export function XIcon({ className }: { className?: string }) {
   return (
     <svg
-      className={className || "w-5 h-5"}
+      className={className || "h-5 w-5"}
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
@@ -167,7 +228,7 @@ export function XIcon({ className }: { className?: string }) {
 export function UserIcon({ className }: { className?: string }) {
   return (
     <svg
-      className={className || "w-5 h-5"}
+      className={className || "h-5 w-5"}
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
@@ -184,7 +245,7 @@ export function UserIcon({ className }: { className?: string }) {
 export function LibraryIcon({ className }: { className?: string }) {
   return (
     <svg
-      className={className || "w-5 h-5"}
+      className={className || "h-5 w-5"}
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
@@ -199,4 +260,42 @@ export function LibraryIcon({ className }: { className?: string }) {
   );
 }
 
+export function GridIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      className={className || "h-4 w-4"}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <rect x="3" y="3" width="7" height="7" rx="1.5" />
+      <rect x="14" y="3" width="7" height="7" rx="1.5" />
+      <rect x="14" y="14" width="7" height="7" rx="1.5" />
+      <rect x="3" y="14" width="7" height="7" rx="1.5" />
+    </svg>
+  );
+}
 
+export function ListIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      className={className || "h-4 w-4"}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <line x1="8" y1="6" x2="21" y2="6" />
+      <line x1="8" y1="12" x2="21" y2="12" />
+      <line x1="8" y1="18" x2="21" y2="18" />
+      <line x1="3" y1="6" x2="3.01" y2="6" />
+      <line x1="3" y1="12" x2="3.01" y2="12" />
+      <line x1="3" y1="18" x2="3.01" y2="18" />
+    </svg>
+  );
+}

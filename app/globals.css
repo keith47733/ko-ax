@@ -1,8 +1,24 @@
 @import "tailwindcss";
 
 @theme {
-  --font-sans: var(--font-inter), -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  --font-mono: var(--font-ibm-plex-mono), ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  --font-sans:
+    var(--font-inter), -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+    sans-serif;
+  --font-mono:
+    var(--font-ibm-plex-mono), ui-monospace, SFMono-Regular, Menlo, Monaco,
+    Consolas, monospace;
+
+  /* Brand / Palette Colors */
+  --color-coral: #ff7a50; /* Sunlit Coral (Want to Watch & Primary Action) */
+  --color-coral-light: #ffa080; /* Lighter Coral on Hover */
+  --color-mint: #34d399; /* Vivid Mint Sorbet (Watched) */
+  --color-mint-light: #6ee7b7; /* Lighter Mint on Hover */
+  --color-periwinkle: #818cf8; /* Electric Periwinkle (Watching) */
+  --color-periwinkle-light: #a5b4fc; /* Lighter Periwinkle on Hover */
+  --color-canvas: #f4f3f0; /* Warm Natural Japanese Stone Canvas */
+  --color-beeswax: #e0b438; /* Warm Natural Beeswax Yellow */
+  --color-beeswax-light: #f2d779; /* Lighter Luminous Beeswax */
+  --color-beeswax-dark: #c49622; /* Deep Golden Beeswax */
 }
 
 /* Prevent layout shift when vertical scrollbar appears/disappears */
@@ -11,7 +27,112 @@ html {
 }
 
 body {
-  background-color: #F4F3F0;
+  background-color: #f4f3f0; /* #F4F3F0 Japandi canvas */
   color: #27272a; /* zinc-800 */
-  font-family: var(--font-inter), -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-family:
+    var(--font-inter),
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    Roboto,
+    sans-serif;
+}
+
+/* ============================================================
+   UNIVERSAL INTERACTIVE BUTTON HOVER SYSTEM
+   Direct, high-contrast, guaranteed lighter-shade hover rules
+   that trigger reliably on all displays, browsers, and devices.
+   ============================================================ */
+
+/* 1. Status: Active WANT (Coral) -> Noticeably lighter sunlit coral */
+.btn-status-want:hover {
+  background-color: #ffa080 !important;
+  border-color: #ffb299 !important;
+  color: #09090b !important;
+  filter: brightness(1.1) !important;
+}
+/* Inactive WANT in dark theme (Detail View) -> visibly lighter zinc-600 with coral accent */
+.btn-status-want-inactive:hover {
+  background-color: #52525b !important; /* zinc-600 */
+  border-color: #ff7a50 !important;
+  color: #ffffff !important;
+}
+
+/* 2. Status: Active WATCHING (Periwinkle) -> Noticeably lighter lavender periwinkle */
+.btn-status-watching:hover {
+  background-color: #a5b4fc !important;
+  border-color: #c7d2fe !important;
+  color: #0f172a !important;
+  filter: brightness(1.1) !important;
+}
+/* Inactive WATCHING in dark theme (Detail View) -> visibly lighter zinc-600 with periwinkle accent */
+.btn-status-watching-inactive:hover {
+  background-color: #52525b !important; /* zinc-600 */
+  border-color: #818cf8 !important;
+  color: #ffffff !important;
+}
+
+/* 3. Status: Active WATCHED (Mint) -> Noticeably lighter mint sorbet */
+.btn-status-watched:hover {
+  background-color: #6ee7b7 !important;
+  border-color: #a7f3d0 !important;
+  color: #022c22 !important;
+  filter: brightness(1.1) !important;
+}
+/* Inactive WATCHED in dark theme (Detail View) -> visibly lighter zinc-600 with mint accent */
+.btn-status-watched-inactive:hover {
+  background-color: #52525b !important; /* zinc-600 */
+  border-color: #34d399 !important;
+  color: #ffffff !important;
+}
+
+/* 4. Generic dark utility buttons (BACK, FIND SIMILAR, SEASON TRACKER, MediaCard Compass) */
+.btn-zinc-interactive:hover {
+  background-color: #52525b !important; /* zinc-600, visibly lighter than zinc-700 */
+  border-color: #a1a1aa !important; /* zinc-400 */
+  color: #ffffff !important;
+  filter: brightness(1.1) !important;
+}
+
+/* 5. Light HUD Badges on Media Card (Rating button & Untracked Status button) */
+.btn-hud-light:hover {
+  background-color: #ffffff !important;
+  color: #09090b !important;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.25), 0 8px 10px -6px rgba(0, 0, 0, 0.2) !important;
+  filter: brightness(1.08) !important;
+}
+
+/* 6. Minimal text CLEAR buttons */
+/* On dark background (Detail View) -> goes from zinc-400 to pure white with underline */
+.btn-text-clear:hover {
+  color: #ffffff !important;
+  text-decoration: underline !important;
+  text-underline-offset: 3px !important;
+}
+/* On light background (MediaCard rating popup) -> goes from zinc-400 to deep zinc-950 with underline */
+.btn-text-clear-dark:hover {
+  color: #09090b !important;
+  text-decoration: underline !important;
+  text-underline-offset: 3px !important;
+}
+
+/* Custom Autofill: Preserve clean stone input background instead of harsh browser blue */
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus,
+input:-webkit-autofill:active {
+  -webkit-box-shadow: 0 0 0 1000px #fafaf9 inset !important;
+  -webkit-text-fill-color: #09090b !important;
+  transition: background-color 5000s ease-in-out 0s;
+}
+
+/* 7. Beeswax Gradient Button System */
+.btn-beeswax-gradient {
+  background: linear-gradient(135deg, #f0d574 0%, #e2b73e 50%, #cca028 100%) !important;
+  border-color: rgba(204, 160, 40, 0.5) !important;
+  color: #09090b !important;
+}
+.btn-beeswax-gradient:hover {
+  background: linear-gradient(135deg, #f5dc86 0%, #e8c04c 50%, #d4aa32 100%) !important;
+  filter: brightness(1.03) !important;
 }

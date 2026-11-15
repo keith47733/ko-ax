@@ -1,26 +1,35 @@
 "use client";
 
 import React from "react";
+import type {
+  FilterSearchInputProps,
+  FilterSectionProps,
+  FilterSidebarHeaderProps,
+  FilterSidebarProps,
+  SegmentedControlOption,
+  SegmentedControlProps,
+} from "@/types";
 
-export interface FilterSidebarProps {
-  children: React.ReactNode;
-  className?: string;
-}
+export type {
+  FilterSearchInputProps,
+  FilterSectionProps,
+  FilterSidebarHeaderProps,
+  FilterSidebarProps,
+  SegmentedControlOption,
+  SegmentedControlProps,
+};
 
-export function FilterSidebar({ children, className = "" }: FilterSidebarProps) {
+export function FilterSidebar({
+  children,
+  className = "",
+}: FilterSidebarProps) {
   return (
     <aside
-      className={`w-full lg:w-72 shrink-0 rounded-2xl bg-white p-5 shadow-[0_8px_30px_rgb(0,0,0,0.04)] ring-1 ring-black/5 space-y-4.5 ${className}`}
+      className={`w-full shrink-0 space-y-4.5 rounded-2xl bg-white p-5 shadow-[0_8px_30px_rgb(0,0,0,0.04)] ring-1 ring-black/5 lg:w-72 ${className}`}
     >
       {children}
     </aside>
   );
-}
-
-export interface FilterSidebarHeaderProps {
-  title: string;
-  count?: number;
-  countBadgeClass?: string;
 }
 
 export function FilterSidebarHeader({
@@ -29,25 +38,19 @@ export function FilterSidebarHeader({
   countBadgeClass = "bg-zinc-200 text-zinc-950",
 }: FilterSidebarHeaderProps) {
   return (
-    <div className="border-b border-zinc-200 pb-3.5 flex items-center justify-between gap-2">
-      <h2 className="font-sans text-sm sm:text-base font-black text-zinc-950 tracking-tight truncate">
+    <div className="flex items-center justify-between gap-2 border-b border-zinc-200 pb-3.5">
+      <h2 className="truncate font-sans text-sm font-black tracking-tight text-zinc-950 sm:text-base">
         {title}
       </h2>
       {count !== undefined && (
         <span
-          className={`text-xs font-mono font-bold px-2.5 py-0.5 rounded-xl shrink-0 ${countBadgeClass}`}
+          className={`shrink-0 rounded-xl px-2.5 py-0.5 font-mono text-xs font-bold ${countBadgeClass}`}
         >
           [{count}]
         </span>
       )}
     </div>
   );
-}
-
-export interface FilterSectionProps {
-  label: string;
-  children: React.ReactNode;
-  className?: string;
 }
 
 export function FilterSection({
@@ -57,27 +60,12 @@ export function FilterSection({
 }: FilterSectionProps) {
   return (
     <div className={`space-y-2 ${className}`}>
-      <span className="block text-sm font-mono font-black uppercase text-zinc-950 tracking-wider">
+      <span className="block font-mono text-sm font-black tracking-wider text-zinc-950 uppercase">
         {label}
       </span>
       {children}
     </div>
   );
-}
-
-export interface SegmentedControlOption<T extends string | number> {
-  value: T;
-  label: React.ReactNode;
-  disabled?: boolean;
-}
-
-export interface SegmentedControlProps<T extends string | number> {
-  options: SegmentedControlOption<T>[];
-  value: T;
-  onChange: (value: T) => void;
-  columns?: number;
-  inline?: boolean;
-  className?: string;
 }
 
 export function SegmentedControl<T extends string | number>({
@@ -88,15 +76,28 @@ export function SegmentedControl<T extends string | number>({
   inline = false,
   className = "",
 }: SegmentedControlProps<T>) {
-  const gridClass = columns
-    ? `grid grid-cols-${columns}`
-    : options.length <= 4
-    ? `grid grid-cols-${options.length}`
-    : "grid grid-cols-2";
+  const gridClass =
+    columns === 1
+      ? "grid grid-cols-1"
+      : columns === 2
+        ? "grid grid-cols-2"
+        : columns === 3
+          ? "grid grid-cols-3"
+          : columns === 4
+            ? "grid grid-cols-4"
+            : options.length === 1
+              ? "grid grid-cols-1"
+              : options.length === 2
+                ? "grid grid-cols-2"
+                : options.length === 3
+                  ? "grid grid-cols-3"
+                  : options.length === 4
+                    ? "grid grid-cols-4"
+                    : "grid grid-cols-2";
 
   const containerClass = inline
-    ? `inline-flex p-1 bg-[#F4F3F0] rounded-xl gap-1 text-xs sm:text-sm font-mono uppercase ${className}`
-    : `${gridClass} p-1 bg-[#F4F3F0] rounded-xl gap-1 text-xs sm:text-sm font-mono uppercase text-center ${className}`;
+    ? `inline-flex p-1 bg-canvas rounded-xl gap-1 text-xs sm:text-sm font-mono uppercase ${className}`
+    : `${gridClass} p-1 bg-canvas rounded-xl gap-1 text-xs sm:text-sm font-mono uppercase text-center ${className}`;
 
   return (
     <div className={containerClass}>
@@ -113,9 +114,9 @@ export function SegmentedControl<T extends string | number>({
             type="button"
             onClick={() => !option.disabled && onChange(option.value)}
             disabled={option.disabled}
-            className={`py-2 px-2.5 rounded-lg transition-all cursor-pointer truncate ${
+            className={`cursor-pointer truncate rounded-lg px-2.5 py-2 transition-all ${
               isActive ? activeClass : inactiveClass
-            } ${option.disabled ? "opacity-40 cursor-not-allowed" : ""}`}
+            } ${option.disabled ? "cursor-not-allowed opacity-40" : ""}`}
           >
             {option.label}
           </button>
@@ -123,11 +124,6 @@ export function SegmentedControl<T extends string | number>({
       })}
     </div>
   );
-}
-
-export interface FilterSearchInputProps
-  extends React.InputHTMLAttributes<HTMLInputElement> {
-  className?: string;
 }
 
 export function FilterSearchInput({
@@ -139,9 +135,8 @@ export function FilterSearchInput({
     <input
       type="text"
       placeholder={placeholder}
-      className={`w-full h-11 rounded-xl px-3.5 bg-[#F4F3F0] text-zinc-950 text-xs sm:text-sm font-sans font-medium focus:outline-none focus:ring-2 focus:ring-zinc-950/20 placeholder:text-zinc-400 transition-all ${className}`}
+      className={`h-11 w-full rounded-xl bg-canvas px-3.5 font-sans text-xs font-medium text-zinc-950 transition-all placeholder:text-zinc-400 focus:ring-2 focus:ring-zinc-950/20 focus:outline-none sm:text-sm ${className}`}
       {...props}
     />
   );
 }
-

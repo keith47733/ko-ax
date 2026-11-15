@@ -26,13 +26,13 @@ export async function proxy(request: NextRequest) {
           },
           setAll(cookiesToSet) {
             cookiesToSet.forEach(({ name, value }) =>
-              request.cookies.set(name, value)
+              request.cookies.set(name, value),
             );
             response = NextResponse.next({
               request,
             });
             cookiesToSet.forEach(({ name, value, options }) =>
-              response.cookies.set(name, value, options)
+              response.cookies.set(name, value, options),
             );
           },
         },
@@ -51,7 +51,7 @@ export async function proxy(request: NextRequest) {
     }
   }
 
-  // Fallback: Check simulated operator session cookie
+  // Fallback: Check simulated user session cookie
   const simCookie = request.cookies.get("koax_operator_session");
   if (simCookie?.value) {
     try {
@@ -91,4 +91,3 @@ export const config = {
     "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
   ],
 };
-

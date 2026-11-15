@@ -16,6 +16,7 @@ export interface MediaRecord {
   overview?: string | null;
   genre_ids?: number[];
   tmdb_rating?: number | null;
+  rating_source?: "imdb" | "tmdb";
   number_of_seasons?: number;
   number_of_episodes?: number;
   series_status?: string;
@@ -37,7 +38,7 @@ export interface UserMediaRecord {
   id?: string;
   user_id?: string;
   tmdb_id: number;
-  status: MediaStatus;
+  status: MediaStatus | null;
   rating: number | null;
   updated_at: string;
 }
@@ -85,6 +86,7 @@ export interface MergedMediaItem {
   seasons?: SeasonWireframeGroup[];
   genre_ids?: number[];
   tmdb_rating?: number | null;
+  rating_source?: "imdb" | "tmdb";
   number_of_seasons?: number;
   number_of_episodes?: number;
   series_status?: string;
@@ -128,11 +130,13 @@ export interface EraDefinition {
 
 export const DISCOVERY_ERAS: EraDefinition[] = [
   { key: "all", label: "ALL TIME" },
-  { key: "2020s", label: "2020s", startYear: 2020, endYear: 2029 },
-  { key: "2010s", label: "2010s", startYear: 2010, endYear: 2019 },
-  { key: "2000s", label: "2000s", startYear: 2000, endYear: 2009 },
-  { key: "1990s", label: "1990s", startYear: 1990, endYear: 1999 },
-  { key: "classic", label: "PRE-1990", startYear: 1900, endYear: 1989 },
+  { key: "2020+", label: "2020+", startYear: 2020 },
+  { key: "2010+", label: "2010+", startYear: 2010 },
+  { key: "2000+", label: "2000+", startYear: 2000 },
+  { key: "1990+", label: "1990+", startYear: 1990 },
+  { key: "1980+", label: "1980+", startYear: 1980 },
+  { key: "1970+", label: "1970+", startYear: 1970 },
+  { key: "pre-1970", label: "PRE-1970", endYear: 1969 },
 ];
 
 export interface DiscoverySeedInfo {
@@ -150,12 +154,19 @@ export interface DiscoveryEngineResult {
   dataSource: "tmdb" | "wireframe-store" | "none";
 }
 
+export type DisplayLayoutMode = "grid" | "list";
+
 /**
  * Standardized responsive grid for MediaCards across all views (Tracker, Search, Discovery, Calendar).
  * Sized for a maximum of 4 cards across on desktop/ultrawide displays, ensuring large cinematic posters.
  */
 export const MEDIA_GRID_CLASS =
   "grid grid-cols-1 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-4 gap-5 sm:gap-6";
+
+/**
+ * Standardized list container for MediaListItem across all views.
+ */
+export const MEDIA_LIST_CLASS = "flex flex-col gap-2.5 sm:gap-3";
 
 // ============================================================================
 // TMDB API & RAW DATA SCHEMAS
@@ -174,6 +185,8 @@ export interface TmdbRawResult {
   genre_ids?: number[];
   vote_average?: number;
   popularity?: number;
+  original_language?: string;
+  adult?: boolean;
 }
 
 export interface RawTmdbRecommendation {
@@ -185,6 +198,8 @@ export interface RawTmdbRecommendation {
   overview: string | null;
   genre_ids: number[];
   tmdb_rating: number | null;
+  original_language?: string;
+  adult?: boolean;
 }
 
 export interface DiscoveredFallbackItem {
@@ -212,6 +227,10 @@ export interface TmdbDetailPayload {
   number_of_seasons?: number;
   number_of_episodes?: number;
   status?: string;
+  imdb_id?: string;
+  external_ids?: {
+    imdb_id?: string;
+  };
   last_episode_to_air?: {
     season_number: number;
     episode_number: number;
@@ -320,4 +339,181 @@ export interface AuthActionResult {
     id: string;
     email?: string;
   } | null;
+}
+
+// ============================================================================
+// FILTER & NAVIGATION COMPONENT INTERFACES
+// ============================================================================
+
+export interface FilterSidebarProps {
+  children: React.ReactNode;
+  className?: string;
+}
+
+export interface FilterSidebarHeaderProps {
+  title: string;
+  count?: number;
+  countBadgeClass?: string;
+}
+
+export interface FilterSectionProps {
+  label: string;
+  children: React.ReactNode;
+  className?: string;
+}
+
+export interface SegmentedControlOption<T extends string | number> {
+  value: T;
+  label: React.ReactNode;
+  disabled?: boolean;
+}
+
+export interface SegmentedControlProps<T extends string | number> {
+  options: SegmentedControlOption<T>[];
+  value: T;
+  onChange: (value: T) => void;
+  columns?: number;
+  inline?: boolean;
+  className?: string;
+}
+
+export interface FilterSearchInputProps
+  extends React.InputHTMLAttributes<HTMLInputElement> {
+  className?: string;
+}
+
+// ============================================================================
+// STATUS & INTERACTIVE CONTROLS
+// ============================================================================
+
+export interface StatusOption {
+  value: MediaStatus;
+  shortLabel: string;
+  fullLabel: string;
+  accentBg: string;
+  activeHoverBg: string;
+  activeHoverClass: string;
+  inactiveDarkHoverClass: string;
+  textColor: string;
+  activeRing: string;
+  shadowColor: string;
+  lightHoverBg: string;
+  darkHoverBg: string;
+  Icon: (props: { className?: string }) => React.ReactElement;
+}
+
+export interface StatusToggleGroupProps {
+  status: MediaStatus | null;
+  mediaType?: MediaType;
+  onChange: (nextStatus: MediaStatus) => void;
+  disabled?: boolean;
+  className?: string;
+  theme?: "light" | "dark";
+  boxed?: boolean;
+}
+
+export interface StatusPopupButtonProps {
+  status: MediaStatus | null;
+  mediaType?: MediaType;
+  onSelect: (nextStatus: MediaStatus) => void;
+  disabled?: boolean;
+  title?: string;
+}
+
+export interface StatusRatingControlProps {
+  media: MergedMediaItem;
+  onStateChange?: (updated: MergedMediaItem) => void;
+  className?: string;
+}
+
+export interface SeasonTrackerModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  media: {
+    tmdb_id: number;
+    title: string;
+    media_type: MediaType;
+    poster_path: string | null;
+    backdrop_path?: string | null;
+    release_date?: string | null;
+    next_air_date?: string | null;
+    next_episode_label?: string | null;
+    overview?: string | null;
+    series_status?: string | null;
+    tmdb_rating?: number | null;
+    seasons?: SeasonWireframeGroup[];
+  };
+  initialStatus: MediaStatus | null;
+  initialRating: number | null;
+  onStateChange?: (updated: {
+    status: MediaStatus | null;
+    rating: number | null;
+    seasons: SeasonWireframeGroup[];
+  }) => void;
+}
+
+export type MainViewSortBy = "title" | "date" | "added" | "rating";
+
+export interface SessionCookieOptions {
+  path?: string;
+  maxAge?: number;
+  domain?: string;
+  sameSite?: "lax" | "strict" | "none";
+  secure?: boolean;
+  httpOnly?: boolean;
+}
+
+export interface ViewModeToggleProps {
+  viewMode: DisplayLayoutMode;
+  onChange: (mode: DisplayLayoutMode) => void;
+  className?: string;
+}
+
+export interface SearchBarProps {
+  defaultValue?: string;
+  value?: string;
+  onChange?: (val: string) => void;
+  onSubmit?: (val: string) => void;
+  placeholder?: string;
+  className?: string;
+  inputClassName?: string;
+  buttonClassName?: string;
+  id?: string;
+}
+
+// ============================================================================
+// SUPABASE DATABASE SCHEMAS
+// ============================================================================
+
+export interface MediaTable {
+  tmdb_id: number;
+  title: string;
+  media_type: MediaType;
+  poster_path: string | null;
+  release_date: string | null;
+  next_air_date: string | null;
+  next_episode_label: string | null;
+  overview: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface UserMediaTable {
+  id: string;
+  user_id: string;
+  tmdb_id: number;
+  status: MediaStatus | null;
+  rating: number | null;
+  updated_at: string;
+}
+
+export interface UserEpisodesTable {
+  id: string;
+  user_id: string;
+  tmdb_id: number;
+  tmdb_episode_id: number;
+  season_number: number;
+  episode_number: number;
+  watched_boolean: boolean;
+  watch_date: string | null;
 }

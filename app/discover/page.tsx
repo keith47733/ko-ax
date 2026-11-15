@@ -2,6 +2,7 @@ import React, { Suspense } from "react";
 import { connection } from "next/server";
 import { getDiscoveryRecommendationsAction } from "@/app/actions/media";
 import DiscoveryView from "@/components/DiscoveryView";
+import LoadingSpinner from "@/components/LoadingSpinner";
 import { DiscoverPageProps, MediaType } from "@/types";
 
 async function DiscoverPipeline({
@@ -16,7 +17,9 @@ async function DiscoverPipeline({
 }) {
   await connection();
   const resolvedParams = await searchParams;
-  const rawSeed = resolvedParams.seed ? parseInt(resolvedParams.seed, 10) : undefined;
+  const rawSeed = resolvedParams.seed
+    ? parseInt(resolvedParams.seed, 10)
+    : undefined;
   const seedId = rawSeed && !isNaN(rawSeed) ? rawSeed : undefined;
   const mediaType: MediaType = resolvedParams.type === "tv" ? "tv" : "movie";
   const genre = resolvedParams.genre || "all";
@@ -25,6 +28,7 @@ async function DiscoverPipeline({
   const initialData = await getDiscoveryRecommendationsAction({
     mediaType,
     seedId,
+    seedType: mediaType,
     genreKey: genre,
     eraKey: decade,
     page: 1,
@@ -32,6 +36,7 @@ async function DiscoverPipeline({
 
   return (
     <DiscoveryView
+      key={`${mediaType}-${seedId ?? "auto"}-${genre}-${decade}`}
       initialData={initialData}
       initialMediaType={mediaType}
       seedId={seedId}
@@ -46,9 +51,8 @@ export default function DiscoverPage({ searchParams }: DiscoverPageProps) {
     <main className="w-full">
       <Suspense
         fallback={
-          <div className="rounded-2xl bg-white p-6 text-xs uppercase font-mono text-zinc-500 shadow-[0_8px_30px_rgb(0,0,0,0.04)] flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-zinc-700 animate-pulse" />
-            <span>DISCOVERY ENGINE: RUNNING TMDB RECOMMENDATIONS &amp; MERGING USER LIBRARY...</span>
+          <div className="flex w-full items-center justify-center py-24">
+            <LoadingSpinner size="lg" />
           </div>
         }
       >

@@ -3,21 +3,13 @@
 import { revalidatePath } from "next/cache";
 import { cookies } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
-import { AuthActionResult } from "@/types";
+import { AuthActionResult, SessionCookieOptions } from "@/types";
 
-export type { AuthActionResult };
-
-interface SessionCookieOptions {
-  httpOnly: boolean;
-  secure: boolean;
-  sameSite: "lax" | "strict" | "none";
-  path: string;
-  maxAge?: number;
-}
+export type { AuthActionResult, SessionCookieOptions };
 
 const SIMULATED_SESSION_COOKIE = "koax_operator_session";
 
-export async function getOperatorSessionAction(): Promise<AuthActionResult> {
+export async function getUserSessionAction(): Promise<AuthActionResult> {
   const cookieStore = await cookies();
 
   // 1. Check live Supabase session if configured
@@ -69,13 +61,17 @@ export async function getOperatorSessionAction(): Promise<AuthActionResult> {
   return { success: false, user: null };
 }
 
-export async function loginAction(formData: FormData): Promise<AuthActionResult> {
+export const getOperatorSessionAction = getUserSessionAction;
+
+export async function loginAction(
+  formData: FormData,
+): Promise<AuthActionResult> {
   const email = (formData.get("email") as string)?.trim();
   const password = (formData.get("password") as string)?.trim();
   const stayLoggedIn = formData.get("stayLoggedIn") === "on";
 
   if (!email || !password) {
-    return { error: "OPERATOR EMAIL AND PASSWORD REQUIRED." };
+    return { error: "USER EMAIL AND PASSWORD REQUIRED." };
   }
 
   const cookieStore = await cookies();
@@ -94,7 +90,9 @@ export async function loginAction(formData: FormData): Promise<AuthActionResult>
       });
 
       if (error) {
-        const isUnconfirmed = error.message.toLowerCase().includes("email not confirmed");
+        const isUnconfirmed = error.message
+          .toLowerCase()
+          .includes("email not confirmed");
         return {
           error: isUnconfirmed
             ? "EMAIL NOT CONFIRMED. PLEASE VERIFY YOUR ACCOUNT VIA THE LINK IN YOUR INBOX."
@@ -114,11 +112,14 @@ export async function loginAction(formData: FormData): Promise<AuthActionResult>
             email: data.user.email || email,
             id: data.user.id,
           },
-          message: "OPERATOR AUTHENTICATED SUCCESSFULLY.",
+          message: "USER AUTHENTICATED SUCCESSFULLY.",
         };
       }
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message.toUpperCase() : "AUTHENTICATION FAILED.";
+      const msg =
+        err instanceof Error
+          ? err.message.toUpperCase()
+          : "AUTHENTICATION FAILED.";
       return { error: msg };
     }
   }
@@ -138,8 +139,12 @@ export async function loginAction(formData: FormData): Promise<AuthActionResult>
 
   cookieStore.set(
     SIMULATED_SESSION_COOKIE,
-    JSON.stringify({ email, stayLoggedIn, loggedInAt: new Date().toISOString() }),
-    cookieOptions
+    JSON.stringify({
+      email,
+      stayLoggedIn,
+      loggedInAt: new Date().toISOString(),
+    }),
+    cookieOptions,
   );
 
   revalidatePath("/");
@@ -148,18 +153,20 @@ export async function loginAction(formData: FormData): Promise<AuthActionResult>
     emailConfirmationRequired: false,
     user: { email, id: "simulated_operator" },
     message: stayLoggedIn
-      ? "SIMULATED OPERATOR ACCESS GRANTED (PERSISTENT TOKEN: 30 DAYS)."
-      : "SIMULATED OPERATOR ACCESS GRANTED (SESSION ONLY).",
+      ? "SIMULATED USER ACCESS GRANTED (PERSISTENT TOKEN: 30 DAYS)."
+      : "SIMULATED USER ACCESS GRANTED (SESSION ONLY).",
   };
 }
 
-export async function signupAction(formData: FormData): Promise<AuthActionResult> {
+export async function signupAction(
+  formData: FormData,
+): Promise<AuthActionResult> {
   const email = (formData.get("email") as string)?.trim();
   const password = (formData.get("password") as string)?.trim();
   const stayLoggedIn = formData.get("stayLoggedIn") === "on";
 
   if (!email || !password) {
-    return { error: "OPERATOR EMAIL AND PASSWORD REQUIRED." };
+    return { error: "USER EMAIL AND PASSWORD REQUIRED." };
   }
 
   if (password.length < 6) {
@@ -185,8 +192,21 @@ export async function signupAction(formData: FormData): Promise<AuthActionResult
       }
 
       if (data.user) {
+        // If session was not automatically established, authenticate immediately with password
+        if (!data.session) {
+          const { data: signInData, error: signInError } =
+            await supabase.auth.signInWithPassword({
+              email,
+              password,
+            });
+          if (!signInError && signInData?.session) {
+            data.session = signInData.session;
+          }
+        }
+
         const hasSession = Boolean(data.session);
         if (hasSession) {
+          cookieStore.delete(SIMULATED_SESSION_COOKIE);
           revalidatePath("/");
           return {
             success: true,
@@ -195,10 +215,10 @@ export async function signupAction(formData: FormData): Promise<AuthActionResult
               email: data.user.email || email,
               id: data.user.id,
             },
-            message: "OPERATOR REGISTERED & AUTHENTICATED.",
+            message: "USER REGISTERED & AUTHENTICATED.",
           };
         } else {
-          // Supabase requires email verification before session token is granted
+          // Fallback only if email confirmation is somehow still enforced
           return {
             success: true,
             emailConfirmationRequired: true,
@@ -206,12 +226,13 @@ export async function signupAction(formData: FormData): Promise<AuthActionResult
               email: data.user.email || email,
               id: data.user.id,
             },
-            message: "OPERATOR ACCOUNT CREATED. VERIFICATION LINK DISPATCHED.",
+            message: "USER ACCOUNT CREATED. AWAITING VERIFICATION.",
           };
         }
       }
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message.toUpperCase() : "SIGN UP FAILED.";
+      const msg =
+        err instanceof Error ? err.message.toUpperCase() : "SIGN UP FAILED.";
       return { error: msg };
     }
   }
@@ -230,8 +251,12 @@ export async function signupAction(formData: FormData): Promise<AuthActionResult
 
   cookieStore.set(
     SIMULATED_SESSION_COOKIE,
-    JSON.stringify({ email, stayLoggedIn, loggedInAt: new Date().toISOString() }),
-    cookieOptions
+    JSON.stringify({
+      email,
+      stayLoggedIn,
+      loggedInAt: new Date().toISOString(),
+    }),
+    cookieOptions,
   );
 
   revalidatePath("/");
@@ -239,16 +264,16 @@ export async function signupAction(formData: FormData): Promise<AuthActionResult
     success: true,
     emailConfirmationRequired: false,
     user: { email, id: "simulated_operator" },
-    message: "OPERATOR ACCOUNT CREATED (SIMULATED MODE).",
+    message: "USER ACCOUNT CREATED (SIMULATED MODE).",
   };
 }
 
 export async function resendVerificationAction(
-  email: string
+  email: string,
 ): Promise<AuthActionResult> {
   const trimmed = email.trim();
   if (!trimmed) {
-    return { error: "OPERATOR EMAIL REQUIRED FOR VERIFICATION." };
+    return { error: "USER EMAIL REQUIRED FOR VERIFICATION." };
   }
 
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -274,7 +299,9 @@ export async function resendVerificationAction(
       };
     } catch (err: unknown) {
       const msg =
-        err instanceof Error ? err.message.toUpperCase() : "FAILED TO RE-SEND LINK.";
+        err instanceof Error
+          ? err.message.toUpperCase()
+          : "FAILED TO RE-SEND LINK.";
       return { error: msg };
     }
   }
@@ -305,7 +332,7 @@ export async function logoutAction(): Promise<AuthActionResult> {
   cookieStore.delete(SIMULATED_SESSION_COOKIE);
   revalidatePath("/");
 
-  return { success: true, user: null, message: "OPERATOR SESSION TERMINATED." };
+  return { success: true, user: null, message: "USER SESSION TERMINATED." };
 }
 
 export async function deleteAccountAction(): Promise<AuthActionResult> {
@@ -327,10 +354,17 @@ export async function deleteAccountAction(): Promise<AuthActionResult> {
       if (user) {
         // If service role key is available, execute admin deletion
         if (serviceRoleKey) {
-          const { createClient: createAdminClient } = await import("@supabase/supabase-js");
+          const { createClient: createAdminClient } =
+            await import("@supabase/supabase-js");
           const adminSupabase = createAdminClient(supabaseUrl, serviceRoleKey);
-          await adminSupabase.from("user_episodes").delete().eq("user_id", user.id);
-          await adminSupabase.from("user_media").delete().eq("user_id", user.id);
+          await adminSupabase
+            .from("user_episodes")
+            .delete()
+            .eq("user_id", user.id);
+          await adminSupabase
+            .from("user_media")
+            .delete()
+            .eq("user_id", user.id);
           await adminSupabase.auth.admin.deleteUser(user.id);
         } else {
           // Clean up user data rows via user's authenticated scope
@@ -347,5 +381,9 @@ export async function deleteAccountAction(): Promise<AuthActionResult> {
   cookieStore.delete(SIMULATED_SESSION_COOKIE);
   revalidatePath("/");
 
-  return { success: true, user: null, message: "OPERATOR ACCOUNT AND DATA PURGED." };
+  return {
+    success: true,
+    user: null,
+    message: "USER ACCOUNT AND DATA PURGED.",
+  };
 }

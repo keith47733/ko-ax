@@ -1,49 +1,67 @@
 "use client";
 
-import React, { useEffect, useRef, useState } from "react";
 import { BookmarkIcon, CheckCircleIcon, EyeIcon } from "@/components/Icons";
-import { MediaStatus, MediaType } from "@/types";
+import {
+  MediaStatus,
+  MediaType,
+  StatusOption,
+  StatusPopupButtonProps,
+  StatusToggleGroupProps,
+} from "@/types";
+import React, { useEffect, useRef, useState } from "react";
 
-export interface StatusOption {
-  value: MediaStatus;
-  shortLabel: string;
-  fullLabel: string;
-  accentBg: string;
-  textColor: string;
-  activeRing: string;
-  shadowColor: string;
-  Icon: (props: { className?: string }) => React.ReactElement;
-}
+export type { StatusOption, StatusPopupButtonProps, StatusToggleGroupProps };
 
 export const STATUS_DEFINITIONS: StatusOption[] = [
   {
     value: "want_to_watch",
     shortLabel: "WANT",
-    fullLabel: "WANT TO WATCH",
-    accentBg: "bg-[#FF7A50]",
+    fullLabel: "WANT",
+    accentBg: "bg-coral",
+    activeHoverBg: "hover:bg-[#ffa080]",
+    activeHoverClass: "btn-status-want",
+    inactiveDarkHoverClass: "btn-status-want-inactive",
     textColor: "text-zinc-950 font-black",
     activeRing: "ring-orange-500/30",
     shadowColor: "shadow-orange-500/25",
+    lightHoverBg:
+      "hover:bg-orange-100 hover:text-orange-950 hover:border-coral",
+    darkHoverBg:
+      "hover:bg-zinc-600 hover:border-coral hover:text-white",
     Icon: BookmarkIcon,
   },
   {
     value: "watching",
     shortLabel: "WATCHING",
     fullLabel: "WATCHING",
-    accentBg: "bg-[#818CF8]",
+    accentBg: "bg-periwinkle",
+    activeHoverBg: "hover:bg-[#a5b4fc]",
+    activeHoverClass: "btn-status-watching",
+    inactiveDarkHoverClass: "btn-status-watching-inactive",
     textColor: "text-indigo-950 font-black",
     activeRing: "ring-indigo-500/30",
     shadowColor: "shadow-indigo-500/25",
+    lightHoverBg:
+      "hover:bg-indigo-100 hover:text-indigo-950 hover:border-periwinkle",
+    darkHoverBg:
+      "hover:bg-zinc-600 hover:border-periwinkle hover:text-white",
     Icon: EyeIcon,
   },
   {
     value: "watched",
     shortLabel: "WATCHED",
     fullLabel: "WATCHED",
-    accentBg: "bg-[#34D399]",
+    accentBg: "bg-mint",
+    activeHoverBg: "hover:bg-[#6ee7b7]",
+    activeHoverClass: "btn-status-watched",
+    inactiveDarkHoverClass: "btn-status-watched-inactive",
     textColor: "text-emerald-950 font-black",
     activeRing: "ring-emerald-500/30",
     shadowColor: "shadow-emerald-500/25",
+    lightHoverBg:
+      "hover:bg-emerald-100 hover:text-emerald-950 hover:border-mint",
+    darkHoverBg:
+      "hover:bg-zinc-600 hover:border-mint hover:text-white",
     Icon: CheckCircleIcon,
   },
 ];
@@ -58,18 +76,36 @@ export function StatusToggleGroup({
   onChange,
   disabled = false,
   className = "",
+  theme = "dark",
+  boxed = true,
 }: {
   status: MediaStatus | null;
   mediaType?: MediaType;
   onChange: (nextStatus: MediaStatus) => void;
   disabled?: boolean;
   className?: string;
+  theme?: "light" | "dark";
+  boxed?: boolean;
 }) {
+  const isDark = theme === "dark";
+
+  const containerClasses = boxed
+    ? `grid grid-cols-3 gap-2.5 rounded-2xl ${
+        isDark
+          ? "border border-zinc-700/80 bg-zinc-900/80 backdrop-blur-md"
+          : "bg-canvas"
+      } p-1.5 sm:gap-3 ${className}`
+    : `grid grid-cols-3 gap-2 sm:gap-2.5 ${className}`;
+
+  const buttonPaddingAndText = boxed
+    ? "py-3.5 px-3 text-xs sm:text-sm font-mono font-bold"
+    : "py-1.5 sm:py-2 px-2 sm:px-3 text-xs sm:text-[13px] font-mono font-bold";
+
   return (
     <div
       role="group"
       aria-label="Media Watch Status"
-      className={`grid grid-cols-3 gap-2.5 sm:gap-3 p-1.5 bg-[#F4F3F0] rounded-2xl ${className}`}
+      className={containerClasses}
     >
       {STATUS_DEFINITIONS.map((opt) => {
         const isActive = status === opt.value;
@@ -77,14 +113,16 @@ export function StatusToggleGroup({
           mediaType === "movie" && opt.value === "watching";
         const isOptionDisabled = disabled || isWatchingMovie;
 
-        let style =
-          "bg-white text-zinc-800 hover:text-zinc-950 hover:bg-zinc-50 rounded-xl py-3.5 px-3 text-xs sm:text-sm font-mono font-bold uppercase tracking-wider transition-all shadow-xs";
+        let style = isDark
+          ? `border border-zinc-600 bg-zinc-700/90 text-white ${opt.darkHoverBg} ${opt.inactiveDarkHoverClass} rounded-xl ${buttonPaddingAndText} uppercase tracking-wider transition-all duration-150 shadow-xs hover:scale-[1.02]`
+          : `border border-zinc-200/90 bg-white text-zinc-800 ${opt.lightHoverBg} rounded-xl ${buttonPaddingAndText} uppercase tracking-wider transition-all duration-150 shadow-xs hover:scale-[1.02]`;
 
         if (isOptionDisabled) {
-          style =
-            "bg-[#F4F3F0]/60 text-zinc-400 line-through cursor-not-allowed rounded-xl py-3.5 px-3 text-xs sm:text-sm font-mono font-medium uppercase opacity-40 select-none";
+          style = isDark
+            ? `border border-zinc-800/40 bg-zinc-900/40 text-zinc-600 line-through cursor-not-allowed rounded-xl ${buttonPaddingAndText} uppercase opacity-40 select-none`
+            : `bg-canvas/60 text-zinc-400 line-through cursor-not-allowed rounded-xl ${buttonPaddingAndText} uppercase opacity-40 select-none`;
         } else if (isActive) {
-          style = `${opt.accentBg} ${opt.textColor} font-mono font-black rounded-xl py-3.5 px-3 text-xs sm:text-sm uppercase tracking-wider shadow-lg ${opt.shadowColor} ring-2 ring-white/70`;
+          style = `${opt.accentBg} ${opt.textColor} font-mono font-black rounded-xl ${buttonPaddingAndText} uppercase tracking-wider shadow-lg ${opt.shadowColor} border ${isDark ? "border-white/70" : "border-zinc-900/15"} ${opt.activeHoverBg} ${opt.activeHoverClass} hover:scale-[1.03] transition-all duration-150`;
         }
 
         return (
@@ -93,7 +131,7 @@ export function StatusToggleGroup({
             type="button"
             onClick={() => !isOptionDisabled && onChange(opt.value)}
             disabled={isOptionDisabled}
-            className={`flex items-center justify-center cursor-pointer transition-all active:scale-95 ${style}`}
+            className={`flex cursor-pointer items-center justify-center text-center transition-all active:scale-95 ${style}`}
           >
             {opt.fullLabel}
           </button>
@@ -150,10 +188,10 @@ export function StatusPopupButton({
   const StatusIcon = activeDef ? activeDef.Icon : BookmarkIcon;
 
   let buttonClasses =
-    "bg-white/95 text-zinc-800 hover:text-zinc-950 hover:bg-white shadow-md ring-2 ring-white/90";
+    "bg-white/85 text-zinc-800 btn-hud-light hover:text-zinc-950 hover:bg-white hover:border-zinc-400 hover:scale-105 shadow-md border border-white/90 transition-all duration-150";
 
   if (activeDef) {
-    buttonClasses = `${activeDef.accentBg} ${activeDef.textColor} shadow-lg ${activeDef.shadowColor} ring-2 ring-white/90`;
+    buttonClasses = `${activeDef.accentBg} ${activeDef.textColor} shadow-lg ${activeDef.shadowColor} border border-white/90 ${activeDef.activeHoverBg} ${activeDef.activeHoverClass} hover:scale-105 hover:border-white transition-all duration-150`;
   }
 
   return (
@@ -169,9 +207,9 @@ export function StatusPopupButton({
           title ||
           `Status: ${activeDef?.fullLabel || "Untracked"} • Click to modify`
         }
-        className={`w-16 h-11 rounded-xl flex items-center justify-center cursor-pointer backdrop-blur-md transition-all active:scale-95 shrink-0 ${buttonClasses}`}
+        className={`flex h-8 w-11 shrink-0 cursor-pointer items-center justify-center rounded-lg backdrop-blur-md transition-all active:scale-95 ${buttonClasses}`}
       >
-        <StatusIcon className="w-5.5 h-5.5 shrink-0" />
+        <StatusIcon className="h-4 w-4 shrink-0" />
       </button>
 
       {isOpen && (
@@ -186,10 +224,10 @@ export function StatusPopupButton({
           />
           <div
             onClick={(e) => e.stopPropagation()}
-            className="absolute top-13 right-0 z-30 w-64 rounded-2xl bg-white p-3 shadow-2xl ring-2 ring-black/10 text-zinc-950 select-text space-y-2"
+            className="absolute top-9.5 right-0 z-30 w-60 space-y-2 rounded-2xl bg-white p-2.5 text-zinc-950 shadow-2xl ring-2 ring-black/10 select-text"
           >
-            <div className="flex items-center justify-between border-b border-zinc-200 pb-1.5 w-full">
-              <span className="font-mono text-xs font-bold uppercase tracking-wider text-zinc-800">
+            <div className="flex w-full items-center justify-between border-b border-zinc-200 pb-1.5">
+              <span className="font-mono text-xs font-bold tracking-wider text-zinc-800 uppercase">
                 STATUS
               </span>
               <button
@@ -198,27 +236,32 @@ export function StatusPopupButton({
                   e.stopPropagation();
                   setIsOpen(false);
                 }}
-                className="text-sm font-mono font-bold text-zinc-400 hover:text-zinc-950 cursor-pointer p-0 leading-none"
+                className="cursor-pointer p-0 font-mono text-sm leading-none font-bold text-zinc-400 hover:text-zinc-950"
                 title="Close without changing"
               >
                 ✕
               </button>
             </div>
 
-            <div className="grid grid-cols-3 gap-1.5 w-full">
+            <div className="grid w-full grid-cols-3 gap-1.5">
               {STATUS_DEFINITIONS.map((opt) => {
                 const isActive = status === opt.value;
                 const isOptionDisabled =
                   mediaType === "movie" && opt.value === "watching";
 
-                let chipStyle =
-                  "bg-[#F4F3F0] text-zinc-800 hover:bg-zinc-200 rounded-xl font-bold transition-all";
+                let chipStyle = `border border-zinc-200/90 bg-canvas text-zinc-800 ${opt.lightHoverBg} rounded-xl font-bold transition-all duration-150 hover:scale-[1.02]`;
 
                 if (isOptionDisabled) {
                   chipStyle =
-                    "bg-[#F4F3F0]/60 text-zinc-400 line-through cursor-not-allowed rounded-xl opacity-40";
+                    "border border-transparent bg-canvas/60 text-zinc-400 line-through cursor-not-allowed rounded-xl opacity-40 select-none";
                 } else if (isActive) {
-                  chipStyle = `${opt.accentBg} ${opt.textColor} rounded-xl shadow-md ring-2 ${opt.activeRing}`;
+                  chipStyle = `${opt.accentBg} ${opt.textColor} rounded-xl shadow-md border ${
+                    opt.value === "want_to_watch"
+                      ? "border-orange-500/50"
+                      : opt.value === "watching"
+                        ? "border-indigo-500/50"
+                        : "border-emerald-500/50"
+                  } ${opt.activeHoverBg} ${opt.activeHoverClass} hover:scale-[1.02] transition-all duration-150`;
                 }
 
                 return (
@@ -232,7 +275,7 @@ export function StatusPopupButton({
                       }
                     }}
                     disabled={disabled || isOptionDisabled}
-                    className={`h-9 px-1 text-xs font-mono uppercase flex items-center justify-center truncate cursor-pointer transition-all ${chipStyle}`}
+                    className={`flex h-8 cursor-pointer items-center justify-center truncate px-1 font-mono text-xs uppercase transition-all ${chipStyle}`}
                   >
                     {opt.shortLabel}
                   </button>

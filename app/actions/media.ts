@@ -40,7 +40,10 @@ function getTmdbHeaders(): HeadersInit {
   };
 }
 
-function buildTmdbUrl(path: string, params: Record<string, string> = {}): string {
+function buildTmdbUrl(
+  path: string,
+  params: Record<string, string> = {},
+): string {
   const url = new URL(`https://api.themoviedb.org/3${path}`);
   for (const [k, v] of Object.entries(params)) {
     url.searchParams.set(k, v);
@@ -64,9 +67,114 @@ function sanitizeDate(val?: string | null): string | null {
   return new Date(parsed).toISOString().slice(0, 10);
 }
 
+declare global {
+  var __kuraTmdbRatingCache: Map<number, number> | undefined;
+}
+
+export function getTmdbRatingCache(): Map<number, number> {
+  if (!globalThis.__kuraTmdbRatingCache) {
+    globalThis.__kuraTmdbRatingCache = new Map<number, number>();
+  }
+  return globalThis.__kuraTmdbRatingCache;
+}
+
+/**
+ * Fetches the IMDb rating for an IMDb ID (e.g. "tt0111161") using OMDb API.
+ * Caches responses via Next.js fetch revalidation (3 days).
+ */
+export async function fetchImdbRating(
+  imdbId?: string | null,
+): Promise<number | null> {
+  const apiKey = process.env.OMDB_API_KEY;
+  if (!apiKey || !imdbId || !imdbId.startsWith("tt")) return null;
+
+  try {
+    const res = await fetch(
+      `https://www.omdbapi.com/?i=${encodeURIComponent(imdbId)}&apikey=${apiKey}`,
+      {
+        next: { revalidate: 86400 * 3 },
+      },
+    );
+
+    if (res.ok) {
+      const data = (await res.json()) as {
+        Response?: string;
+        imdbRating?: string;
+      };
+      if (
+        data.Response !== "False" &&
+        data.imdbRating &&
+        data.imdbRating !== "N/A"
+      ) {
+        const parsed = parseFloat(data.imdbRating);
+        if (!isNaN(parsed) && parsed > 0) {
+          return Math.round(parsed * 10) / 10;
+        }
+      }
+    }
+  } catch {
+    // Fallback if OMDb is unreachable
+  }
+
+  return null;
+}
+
+/**
+ * Fetches the IMDb rating for a title (resolving IMDb ID via TMDB external_ids -> OMDb API),
+ * with graceful fallback to TMDB vote average.
+ * Cached in memory and via Next.js fetch revalidation.
+ */
+export async function fetchTmdbRating(
+  tmdbId: number,
+  mediaType: MediaType = "movie",
+): Promise<number | null> {
+  const cache = getTmdbRatingCache();
+  if (cache.has(tmdbId)) {
+    return cache.get(tmdbId) ?? null;
+  }
+
+  try {
+    const url = buildTmdbUrl(`/${mediaType}/${tmdbId}`, {
+      append_to_response: "external_ids",
+    });
+    const res = await fetch(url, {
+      headers: getTmdbHeaders(),
+      next: { revalidate: 86400 },
+    });
+    if (res.ok) {
+      const data = (await res.json()) as {
+        vote_average?: number;
+        imdb_id?: string;
+        external_ids?: { imdb_id?: string };
+      };
+
+      // 1. Prioritize IMDb rating from OMDb
+      const imdbId = data.external_ids?.imdb_id || data.imdb_id;
+      if (imdbId) {
+        const imdbRating = await fetchImdbRating(imdbId);
+        if (typeof imdbRating === "number" && imdbRating > 0) {
+          cache.set(tmdbId, imdbRating);
+          return imdbRating;
+        }
+      }
+
+      // 2. Fallback to TMDB vote average
+      if (typeof data.vote_average === "number" && data.vote_average > 0) {
+        const rating = Math.round(data.vote_average * 10) / 10;
+        cache.set(tmdbId, rating);
+        return rating;
+      }
+    }
+  } catch {
+    // TMDB offline or network glitch fallback
+  }
+
+  return null;
+}
+
 /**
  * Helper to get the server Supabase client wired with cookies, plus authenticated user info.
- * Supports both live Supabase sessions and simulated operator session fallback.
+ * Supports both live Supabase sessions and simulated user session fallback.
  */
 async function getAuthenticatedUser(): Promise<{
   supabase: Awaited<ReturnType<typeof createServerSupabaseClient>> | null;
@@ -77,7 +185,9 @@ async function getAuthenticatedUser(): Promise<{
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
     process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
 
-  let supabaseClient: Awaited<ReturnType<typeof createServerSupabaseClient>> | null = null;
+  let supabaseClient: Awaited<
+    ReturnType<typeof createServerSupabaseClient>
+  > | null = null;
 
   if (supabaseUrl && supabaseKey) {
     try {
@@ -87,7 +197,10 @@ async function getAuthenticatedUser(): Promise<{
       } = await supabaseClient.auth.getUser();
 
       if (user) {
-        return { supabase: supabaseClient, user: { id: user.id, email: user.email } };
+        return {
+          supabase: supabaseClient,
+          user: { id: user.id, email: user.email },
+        };
       }
     } catch {
       // Fall through to simulated check
@@ -200,9 +313,13 @@ export async function searchAndMergeMedia(query: string): Promise<{
   }> = [];
 
   try {
+    const cookieStore = await cookies();
+    const includeAdult = cookieStore.get("kura_adult")?.value === "true";
+    const englishOnly = cookieStore.get("kura_english_only")?.value === "true";
+
     const url = buildTmdbUrl("/search/multi", {
       query: trimmed,
-      include_adult: "false",
+      include_adult: includeAdult ? "true" : "false",
       language: "en-US",
       page: "1",
     });
@@ -219,21 +336,28 @@ export async function searchAndMergeMedia(query: string): Promise<{
       rawMediaResults = results
         .filter(
           (item): item is TmdbRawResult & { media_type: "movie" | "tv" } =>
-            item.media_type === "movie" || item.media_type === "tv"
+            (item.media_type === "movie" || item.media_type === "tv") &&
+            (!englishOnly || !item.original_language || item.original_language === "en"),
         )
-        .map((item) => ({
-          tmdb_id: item.id,
-          title: item.title || item.name || `Untitled #${item.id}`,
-          media_type: item.media_type,
-          poster_path: item.poster_path ?? null,
-          backdrop_path: item.backdrop_path ?? null,
-          release_date: item.release_date || item.first_air_date || null,
-          overview: item.overview ?? null,
-          tmdb_rating:
-            typeof item.vote_average === "number"
+        .map((item) => {
+          const rating =
+            typeof item.vote_average === "number" && item.vote_average > 0
               ? Math.round(item.vote_average * 10) / 10
-              : null,
-        }));
+              : null;
+          if (rating !== null) {
+            getTmdbRatingCache().set(item.id, rating);
+          }
+          return {
+            tmdb_id: item.id,
+            title: item.title || item.name || `Untitled #${item.id}`,
+            media_type: item.media_type,
+            poster_path: item.poster_path ?? null,
+            backdrop_path: item.backdrop_path ?? null,
+            release_date: item.release_date || item.first_air_date || null,
+            overview: item.overview ?? null,
+            tmdb_rating: rating,
+          };
+        });
     }
   } catch {
     // Fallback to local seed matching if network/TMDB is unreachable
@@ -276,9 +400,10 @@ export async function searchAndMergeMedia(query: string): Promise<{
       rating: matched?.rating ?? null,
       updated_at: matched?.updated_at ?? null,
       tmdb_rating: raw.tmdb_rating ?? null,
+      rating_source: matched?.status ? "imdb" : "tmdb",
       seasons:
         raw.media_type === "tv"
-          ? buildDefaultSeasonsForTv(raw.tmdb_id, store.userEpisodes)
+          ? (store.seasonsByMedia.get(raw.tmdb_id) ?? undefined)
           : undefined,
     };
   });
@@ -305,7 +430,7 @@ export async function getTrackedMediaAction(): Promise<{
     const { data: rows } = await supabase
       .from("user_media")
       .select(
-          `
+        `
           tmdb_id,
           status,
           rating,
@@ -320,65 +445,99 @@ export async function getTrackedMediaAction(): Promise<{
             next_episode_label,
             overview
           )
-        `
-        )
-        .eq("user_id", user.id)
-        .order("updated_at", { ascending: false });
+        `,
+      )
+      .eq("user_id", user.id)
+      .not("status", "is", null)
+      .order("updated_at", { ascending: false });
 
-      const { data: epRows } = await supabase
-        .from("user_episodes")
-        .select(
-          "tmdb_id, tmdb_episode_id, season_number, episode_number, watched_boolean, watch_date"
-        )
-        .eq("user_id", user.id);
+    const { data: epRows } = await supabase
+      .from("user_episodes")
+      .select(
+        "tmdb_id, tmdb_episode_id, season_number, episode_number, watched_boolean, watch_date",
+      )
+      .eq("user_id", user.id);
 
-      const episodeMap = new Map<number, UserEpisodeRecord>();
-      for (const ep of epRows ?? []) {
-        episodeMap.set(Number(ep.tmdb_episode_id), {
-          tmdb_id: Number(ep.tmdb_id),
-          tmdb_episode_id: Number(ep.tmdb_episode_id),
-          season_number: Number(ep.season_number),
-          episode_number: Number(ep.episode_number),
-          watched_boolean: Boolean(ep.watched_boolean),
-          watch_date: ep.watch_date,
-        });
-      }
-
-      if (rows) {
-        const items: MergedMediaItem[] = rows.map((row) => {
-          const mediaObj = Array.isArray(row.media) ? row.media[0] : row.media;
-          const tmdbId = Number(row.tmdb_id);
-          const mediaType = (mediaObj?.media_type as MediaType) || "movie";
-
-          return {
-            tmdb_id: tmdbId,
-            title: mediaObj?.title || `Media #${tmdbId}`,
-            media_type: mediaType,
-            poster_path: mediaObj?.poster_path ?? null,
-            backdrop_path: store.media.get(tmdbId)?.backdrop_path ?? null,
-            release_date: mediaObj?.release_date ?? null,
-            next_air_date:
-              mediaObj?.next_air_date ?? mediaObj?.release_date ?? null,
-            next_episode_label: mediaObj?.next_episode_label ?? null,
-            overview:
-              mediaObj?.overview ?? store.media.get(tmdbId)?.overview ?? null,
-            status: row.status as MediaStatus,
-            rating: row.rating !== null ? Number(row.rating) : null,
-            updated_at: row.updated_at,
-            tmdb_rating: store.media.get(tmdbId)?.tmdb_rating ?? null,
-            seasons:
-              mediaType === "tv"
-                ? buildDefaultSeasonsForTv(tmdbId, episodeMap)
-                : undefined,
-          };
-        });
-
-        return { items, dataSource: "supabase" };
-      }
+    const episodeMap = new Map<number, UserEpisodeRecord>();
+    for (const ep of epRows ?? []) {
+      episodeMap.set(Number(ep.tmdb_episode_id), {
+        tmdb_id: Number(ep.tmdb_id),
+        tmdb_episode_id: Number(ep.tmdb_episode_id),
+        season_number: Number(ep.season_number),
+        episode_number: Number(ep.episode_number),
+        watched_boolean: Boolean(ep.watched_boolean),
+        watch_date: ep.watch_date,
+      });
     }
 
+    if (rows) {
+      const items: MergedMediaItem[] = rows.map((row) => {
+        const mediaObj = Array.isArray(row.media) ? row.media[0] : row.media;
+        const tmdbId = Number(row.tmdb_id);
+        const mediaType = (mediaObj?.media_type as MediaType) || "movie";
+        const cachedRating =
+          getTmdbRatingCache().get(tmdbId) ??
+          store.media.get(tmdbId)?.tmdb_rating ??
+          null;
+
+        return {
+          tmdb_id: tmdbId,
+          title: mediaObj?.title || `Media #${tmdbId}`,
+          media_type: mediaType,
+          poster_path: mediaObj?.poster_path ?? null,
+          backdrop_path: store.media.get(tmdbId)?.backdrop_path ?? null,
+          release_date: mediaObj?.release_date ?? null,
+          next_air_date:
+            mediaObj?.next_air_date ?? mediaObj?.release_date ?? null,
+          next_episode_label: mediaObj?.next_episode_label ?? null,
+          overview:
+            mediaObj?.overview ?? store.media.get(tmdbId)?.overview ?? null,
+          status: row.status as MediaStatus,
+          rating: row.rating !== null ? Number(row.rating) : null,
+          updated_at: row.updated_at,
+          tmdb_rating: cachedRating,
+          rating_source: "imdb",
+          seasons:
+            mediaType === "tv"
+              ? (store.seasonsByMedia.get(tmdbId) ?? undefined)
+              : undefined,
+        };
+      });
+
+      // Batch resolve TMDB ratings concurrently for any missing items
+      const missingItems = items.filter((item) => item.tmdb_rating === null);
+      if (missingItems.length > 0) {
+        await Promise.allSettled(
+          missingItems.map(async (item) => {
+            const rating = await fetchTmdbRating(item.tmdb_id, item.media_type);
+            if (rating !== null) {
+              item.tmdb_rating = rating;
+            }
+          }),
+        );
+      }
+
+      return { items, dataSource: "supabase" };
+    }
+  }
+
+  const wireframeItems = getMergedSeedItems();
+  const missingWireframe = wireframeItems.filter(
+    (item) => item.tmdb_rating === null,
+  );
+  if (missingWireframe.length > 0) {
+    await Promise.allSettled(
+      missingWireframe.map(async (item) => {
+        const rating = await fetchTmdbRating(item.tmdb_id, item.media_type);
+        if (rating !== null) {
+          item.tmdb_rating = rating;
+        }
+      }),
+    );
+  }
+
   return {
-    items: getMergedSeedItems(),
+    items: wireframeItems,
     dataSource: "wireframe-store",
   };
 }
@@ -400,6 +559,7 @@ export async function upsertUserMediaAction(input: {
   overview?: string | null;
   status: MediaStatus | null;
   rating: number | null;
+  tmdb_rating?: number | null;
 }): Promise<{
   ok: boolean;
   status: MediaStatus | null;
@@ -413,9 +573,19 @@ export async function upsertUserMediaAction(input: {
       ? Math.round(input.rating)
       : null;
 
+  if (typeof input.tmdb_rating === "number" && input.tmdb_rating > 0) {
+    getTmdbRatingCache().set(input.tmdb_id, input.tmdb_rating);
+  }
+
   // Always update wireframe store so unauthenticated / local preview stays live
   const store = getWireframeStore();
   const existingMedia = store.media.get(input.tmdb_id);
+  const resolvedTmdbRating =
+    input.tmdb_rating ??
+    getTmdbRatingCache().get(input.tmdb_id) ??
+    existingMedia?.tmdb_rating ??
+    null;
+
   store.media.set(input.tmdb_id, {
     tmdb_id: input.tmdb_id,
     title: input.title,
@@ -424,8 +594,10 @@ export async function upsertUserMediaAction(input: {
     backdrop_path: input.backdrop_path ?? existingMedia?.backdrop_path ?? null,
     release_date: input.release_date ?? existingMedia?.release_date ?? null,
     next_air_date: input.next_air_date ?? existingMedia?.next_air_date ?? null,
-    next_episode_label: input.next_episode_label ?? existingMedia?.next_episode_label ?? null,
+    next_episode_label:
+      input.next_episode_label ?? existingMedia?.next_episode_label ?? null,
     overview: input.overview ?? existingMedia?.overview ?? null,
+    tmdb_rating: resolvedTmdbRating,
   });
 
   const existingUserMedia = store.userMedia.get(input.tmdb_id);
@@ -434,13 +606,31 @@ export async function upsertUserMediaAction(input: {
       ? input.status
       : (existingUserMedia?.status ?? "want_to_watch");
 
+  const isRatingEligible =
+    resolvedStatus === "watching" || resolvedStatus === "watched";
+
+  const resolvedRating = isRatingEligible
+    ? (input.rating !== undefined
+        ? normalizedRating
+        : (existingUserMedia?.rating ?? null))
+    : null;
+
   if (resolvedStatus === null) {
-    store.userMedia.delete(input.tmdb_id);
+    if (resolvedRating !== null) {
+      store.userMedia.set(input.tmdb_id, {
+        tmdb_id: input.tmdb_id,
+        status: null,
+        rating: resolvedRating,
+        updated_at: now,
+      });
+    } else {
+      store.userMedia.delete(input.tmdb_id);
+    }
   } else {
     store.userMedia.set(input.tmdb_id, {
       tmdb_id: input.tmdb_id,
       status: resolvedStatus,
-      rating: normalizedRating,
+      rating: resolvedRating,
       updated_at: now,
     });
   }
@@ -449,8 +639,24 @@ export async function upsertUserMediaAction(input: {
   const { supabase, user } = await getAuthenticatedUser();
 
   if (supabase && user) {
-    if (resolvedStatus === null) {
-      // Remove from user_media junction table (effectively removes from library)
+    // 1. Upsert into `media` cache table with sanitized dates
+    await supabase.from("media").upsert(
+      {
+        tmdb_id: input.tmdb_id,
+        title: input.title,
+        media_type: input.media_type,
+        poster_path: input.poster_path,
+        release_date: sanitizeDate(input.release_date),
+        next_air_date: sanitizeDate(input.next_air_date ?? null),
+        next_episode_label: input.next_episode_label ?? null,
+        overview: input.overview ?? null,
+        updated_at: now,
+      },
+      { onConflict: "tmdb_id" },
+    );
+
+    // 2. Upsert into `user_media` junction table (nullable status keeps rating preserved)
+    if (resolvedStatus === null && resolvedRating === null) {
       const { error: deleteError } = await supabase
         .from("user_media")
         .delete()
@@ -460,37 +666,47 @@ export async function upsertUserMediaAction(input: {
         persistedTo = "supabase";
       }
     } else {
-      // 1. Upsert into `media` cache table with sanitized dates
-      await supabase.from("media").upsert(
-        {
-          tmdb_id: input.tmdb_id,
-          title: input.title,
-          media_type: input.media_type,
-          poster_path: input.poster_path,
-          release_date: sanitizeDate(input.release_date),
-          next_air_date: sanitizeDate(input.next_air_date ?? null),
-          next_episode_label: input.next_episode_label ?? null,
-          overview: input.overview ?? null,
-          updated_at: now,
-        },
-        { onConflict: "tmdb_id" }
-      );
-
-      // 2. Upsert into `user_media` junction table
-      const { error: userMediaError } = await supabase.from("user_media").upsert(
-        {
-          user_id: user.id,
-          tmdb_id: input.tmdb_id,
-          status: resolvedStatus,
-          rating: normalizedRating,
-          updated_at: now,
-        },
-        { onConflict: "user_id,tmdb_id" }
-      );
+      const { error: userMediaError } = await supabase
+        .from("user_media")
+        .upsert(
+          {
+            user_id: user.id,
+            tmdb_id: input.tmdb_id,
+            status: resolvedStatus,
+            rating: resolvedRating,
+            updated_at: now,
+          },
+          { onConflict: "user_id,tmdb_id" },
+        );
 
       if (!userMediaError) {
         persistedTo = "supabase";
       }
+    }
+  }
+
+  // If marking a TV Show as WATCHED, automatically mark all seasons and episodes as watched
+  if (input.media_type === "tv" && resolvedStatus === "watched") {
+    try {
+      const seasons = await fetchTvSeasonsAction(input.tmdb_id);
+      const allEpisodes = seasons.flatMap((s: SeasonWireframeGroup) =>
+        s.episodes.map((ep) => ({
+          tmdb_episode_id: ep.tmdb_episode_id,
+          season_number: ep.season_number,
+          episode_number: ep.episode_number,
+        })),
+      );
+      if (allEpisodes.length > 0) {
+        await batchToggleAllEpisodesAction({
+          tmdb_id: input.tmdb_id,
+          title: input.title,
+          poster_path: input.poster_path,
+          episodes: allEpisodes,
+          watched_boolean: true,
+        });
+      }
+    } catch {
+      // Non-blocking fallback
     }
   }
 
@@ -502,7 +718,7 @@ export async function upsertUserMediaAction(input: {
   return {
     ok: true,
     status: resolvedStatus,
-    rating: resolvedStatus === null ? null : normalizedRating,
+    rating: resolvedRating,
     updated_at: now,
     persistedTo,
   };
@@ -511,7 +727,10 @@ export async function upsertUserMediaAction(input: {
 /**
  * Deprecated starter pack loader (demo data removed per user direction).
  */
-export async function loadDemoDataAction(): Promise<{ ok: boolean; count: number }> {
+export async function loadDemoDataAction(): Promise<{
+  ok: boolean;
+  count: number;
+}> {
   return { ok: true, count: 0 };
 }
 
@@ -581,7 +800,7 @@ export async function toggleEpisodeWatchedAction(input: {
         media_type: "tv",
         poster_path: input.poster_path,
       },
-      { onConflict: "tmdb_id" }
+      { onConflict: "tmdb_id" },
     );
 
     const { error: epError } = await supabase.from("user_episodes").upsert(
@@ -594,7 +813,7 @@ export async function toggleEpisodeWatchedAction(input: {
         watched_boolean: input.watched_boolean,
         watch_date: watchDate,
       },
-      { onConflict: "user_id,tmdb_episode_id" }
+      { onConflict: "user_id,tmdb_episode_id" },
     );
 
     if (!epError) {
@@ -662,7 +881,7 @@ export async function toggleSeasonWatchedAction(input: {
         media_type: "tv",
         poster_path: input.poster_path,
       },
-      { onConflict: "tmdb_id" }
+      { onConflict: "tmdb_id" },
     );
 
     const rows = input.episodes.map((ep) => ({
@@ -675,10 +894,9 @@ export async function toggleSeasonWatchedAction(input: {
       watch_date: watchDate,
     }));
 
-    const { error: epError } = await supabase.from("user_episodes").upsert(
-      rows,
-      { onConflict: "user_id,tmdb_episode_id" }
-    );
+    const { error: epError } = await supabase
+      .from("user_episodes")
+      .upsert(rows, { onConflict: "user_id,tmdb_episode_id" });
 
     if (!epError) {
       persistedTo = "supabase";
@@ -701,10 +919,90 @@ export async function toggleSeasonWatchedAction(input: {
 }
 
 /**
+ * Bulk all-seasons TV episode checkbox mutation:
+ * Updates all episodes across all seasons in `public.user_episodes` and wireframe store.
+ */
+export async function batchToggleAllEpisodesAction(input: {
+  tmdb_id: number;
+  title: string;
+  poster_path: string | null;
+  episodes: Array<{
+    tmdb_episode_id: number;
+    season_number: number;
+    episode_number: number;
+  }>;
+  watched_boolean: boolean;
+}): Promise<{
+  ok: boolean;
+  watched_boolean: boolean;
+  count: number;
+  persistedTo: "supabase" | "wireframe-store";
+}> {
+  const watchDate = input.watched_boolean ? new Date().toISOString() : null;
+  const store = getWireframeStore();
+
+  for (const ep of input.episodes) {
+    store.userEpisodes.set(ep.tmdb_episode_id, {
+      tmdb_id: input.tmdb_id,
+      tmdb_episode_id: ep.tmdb_episode_id,
+      season_number: ep.season_number,
+      episode_number: ep.episode_number,
+      watched_boolean: input.watched_boolean,
+      watch_date: watchDate,
+    });
+  }
+
+  let persistedTo: "supabase" | "wireframe-store" = "wireframe-store";
+  const { supabase, user } = await getAuthenticatedUser();
+
+  if (supabase && user) {
+    await supabase.from("media").upsert(
+      {
+        tmdb_id: input.tmdb_id,
+        title: input.title,
+        media_type: "tv",
+        poster_path: input.poster_path,
+      },
+      { onConflict: "tmdb_id" },
+    );
+
+    const rows = input.episodes.map((ep) => ({
+      user_id: user.id,
+      tmdb_id: input.tmdb_id,
+      tmdb_episode_id: ep.tmdb_episode_id,
+      season_number: ep.season_number,
+      episode_number: ep.episode_number,
+      watched_boolean: input.watched_boolean,
+      watch_date: watchDate,
+    }));
+
+    const { error: epError } = await supabase
+      .from("user_episodes")
+      .upsert(rows, { onConflict: "user_id,tmdb_episode_id" });
+
+    if (!epError) {
+      persistedTo = "supabase";
+    }
+  }
+
+  revalidatePath("/");
+  revalidatePath("/search");
+  revalidatePath("/calendar");
+  revalidatePath("/discover");
+
+  return {
+    ok: true,
+    watched_boolean: input.watched_boolean,
+    count: input.episodes.length,
+    persistedTo,
+  };
+}
+
+/**
  * Fetches TV seasons and episodes from TMDB API and merges them with `user_episodes`.
  */
 export async function fetchTvSeasonsAction(
-  tmdbId: number
+  tmdbId: number,
 ): Promise<SeasonWireframeGroup[]> {
   const store = getWireframeStore();
   const episodeMap = new Map<number, UserEpisodeRecord>(store.userEpisodes);
@@ -714,7 +1012,7 @@ export async function fetchTvSeasonsAction(
     const { data: epRows } = await supabase
       .from("user_episodes")
       .select(
-        "tmdb_id, tmdb_episode_id, season_number, episode_number, watched_boolean, watch_date"
+        "tmdb_id, tmdb_episode_id, season_number, episode_number, watched_boolean, watch_date",
       )
       .eq("user_id", user.id)
       .eq("tmdb_id", tmdbId);
@@ -765,13 +1063,15 @@ export async function fetchTvSeasonsAction(
       };
 
       const validSeasons = (showData.seasons ?? []).filter(
-        (s) => s.season_number > 0
+        (s) => s.season_number > 0,
       );
 
       if (validSeasons.length > 0) {
         // Fetch all seasons using a controlled concurrency pool of 4 parallel requests
         const CONCURRENCY = 4;
-        const seasonResults: SeasonWireframeGroup[] = new Array(validSeasons.length);
+        const seasonResults: SeasonWireframeGroup[] = new Array(
+          validSeasons.length,
+        );
         let currentIndex = 0;
 
         async function fetchWorker() {
@@ -785,7 +1085,7 @@ export async function fetchTvSeasonsAction(
                 {
                   headers: getTmdbHeaders(),
                   cache: "no-store",
-                }
+                },
               );
 
               if (seasonRes.ok) {
@@ -839,7 +1139,7 @@ export async function fetchTvSeasonsAction(
                   watched_boolean: saved?.watched_boolean ?? false,
                   watch_date: saved?.watch_date ?? null,
                 };
-              }
+              },
             );
 
             seasonResults[index] = {
@@ -852,12 +1152,15 @@ export async function fetchTvSeasonsAction(
 
         const workers = Array.from(
           { length: Math.min(CONCURRENCY, validSeasons.length) },
-          () => fetchWorker()
+          () => fetchWorker(),
         );
         await Promise.all(workers);
 
         const fetchedSeasons = seasonResults
-          .filter((s): s is SeasonWireframeGroup => s !== null && s.episodes.length > 0)
+          .filter(
+            (s): s is SeasonWireframeGroup =>
+              s !== null && s.episodes.length > 0,
+          )
           .sort((a, b) => a.season_number - b.season_number);
 
         if (fetchedSeasons.length > 0) {
@@ -881,7 +1184,7 @@ export async function fetchTvSeasonsAction(
  */
 export async function getMediaDetailAction(
   tmdbId: number,
-  mediaTypeHint?: "movie" | "tv"
+  mediaTypeHint?: "movie" | "tv",
 ): Promise<{
   media: MergedMediaItem | null;
   dataSource: "supabase" | "wireframe-store";
@@ -910,7 +1213,9 @@ export async function getMediaDetailAction(
   if (supabase) {
     const { data: mediaRow } = await supabase
       .from("media")
-      .select("media_type, title, poster_path, backdrop_path, release_date, next_air_date, next_episode_label, overview")
+      .select(
+        "media_type, title, poster_path, backdrop_path, release_date, next_air_date, next_episode_label, overview",
+      )
       .eq("tmdb_id", tmdbId)
       .maybeSingle();
 
@@ -980,14 +1285,23 @@ export async function getMediaDetailAction(
     (hasTvEpisodes || userStatus === "watching" ? "tv" : "movie");
 
   // Try fetching TMDB details for backdrop, high-res poster, full synopsis, release date
-  let title = cachedMediaRow?.title || existingMedia?.title || `Media #${tmdbId}`;
-  let posterPath = cachedMediaRow?.poster_path ?? existingMedia?.poster_path ?? null;
-  let backdropPath = cachedMediaRow?.backdrop_path ?? existingMedia?.backdrop_path ?? null;
-  let releaseDate = cachedMediaRow?.release_date ?? existingMedia?.release_date ?? null;
-  let nextAirDate = cachedMediaRow?.next_air_date ?? existingMedia?.next_air_date ?? null;
-  let nextEpisodeLabel = cachedMediaRow?.next_episode_label ?? existingMedia?.next_episode_label ?? null;
+  let title =
+    cachedMediaRow?.title || existingMedia?.title || `Media #${tmdbId}`;
+  let posterPath =
+    cachedMediaRow?.poster_path ?? existingMedia?.poster_path ?? null;
+  let backdropPath =
+    cachedMediaRow?.backdrop_path ?? existingMedia?.backdrop_path ?? null;
+  let releaseDate =
+    cachedMediaRow?.release_date ?? existingMedia?.release_date ?? null;
+  let nextAirDate =
+    cachedMediaRow?.next_air_date ?? existingMedia?.next_air_date ?? null;
+  let nextEpisodeLabel =
+    cachedMediaRow?.next_episode_label ??
+    existingMedia?.next_episode_label ??
+    null;
   let overview = cachedMediaRow?.overview ?? existingMedia?.overview ?? null;
   let tmdbRating = existingMedia?.tmdb_rating ?? null;
+  let ratingSource: "imdb" | "tmdb" = "imdb";
   let numberOfSeasons: number | undefined = existingMedia?.number_of_seasons;
   let numberOfEpisodes: number | undefined = existingMedia?.number_of_episodes;
   let seriesStatus: string | undefined = existingMedia?.series_status;
@@ -1011,8 +1325,22 @@ export async function getMediaDetailAction(
     if (!mediaTypeHint && !cachedMediaRow && !existingMedia) {
       // Concurrently probe both TV and Movie to resolve any TMDB ID collision
       const [tvRes, movieRes] = await Promise.all([
-        fetch(buildTmdbUrl(`/tv/${tmdbId}`), { headers: getTmdbHeaders(), cache: "no-store" }),
-        fetch(buildTmdbUrl(`/movie/${tmdbId}`), { headers: getTmdbHeaders(), cache: "no-store" }),
+        fetch(
+          buildTmdbUrl(`/tv/${tmdbId}`, { append_to_response: "external_ids" }),
+          {
+            headers: getTmdbHeaders(),
+            cache: "no-store",
+          },
+        ),
+        fetch(
+          buildTmdbUrl(`/movie/${tmdbId}`, {
+            append_to_response: "external_ids",
+          }),
+          {
+            headers: getTmdbHeaders(),
+            cache: "no-store",
+          },
+        ),
       ]);
 
       if (tvRes.ok && !movieRes.ok) {
@@ -1026,7 +1354,8 @@ export async function getMediaDetailAction(
         const tvData = await tvRes.json();
         const movieData = await movieRes.json();
         const tvPop = (tvData.vote_count || 0) * 10 + (tvData.popularity || 0);
-        const moviePop = (movieData.vote_count || 0) * 10 + (movieData.popularity || 0);
+        const moviePop =
+          (movieData.vote_count || 0) * 10 + (movieData.popularity || 0);
 
         if (tvPop >= moviePop || userStatus === "watching" || hasTvEpisodes) {
           data = tvData;
@@ -1037,17 +1366,27 @@ export async function getMediaDetailAction(
         }
       }
     } else {
-      res = await fetch(buildTmdbUrl(`/${mediaType}/${tmdbId}`), {
-        headers: getTmdbHeaders(),
-        cache: "no-store",
-      });
+      res = await fetch(
+        buildTmdbUrl(`/${mediaType}/${tmdbId}`, {
+          append_to_response: "external_ids",
+        }),
+        {
+          headers: getTmdbHeaders(),
+          cache: "no-store",
+        },
+      );
 
       if (!res.ok && !mediaTypeHint && !existingMedia) {
         const otherType: MediaType = mediaType === "movie" ? "tv" : "movie";
-        const otherRes = await fetch(buildTmdbUrl(`/${otherType}/${tmdbId}`), {
-          headers: getTmdbHeaders(),
-          cache: "no-store",
-        });
+        const otherRes = await fetch(
+          buildTmdbUrl(`/${otherType}/${tmdbId}`, {
+            append_to_response: "external_ids",
+          }),
+          {
+            headers: getTmdbHeaders(),
+            cache: "no-store",
+          },
+        );
         if (otherRes.ok) {
           res = otherRes;
           mediaType = otherType;
@@ -1065,13 +1404,38 @@ export async function getMediaDetailAction(
       backdropPath = data.backdrop_path ?? backdropPath;
       releaseDate = data.release_date || data.first_air_date || releaseDate;
       overview = data.overview || overview;
-      if (typeof data.vote_average === "number") {
-        tmdbRating = Math.round(data.vote_average * 10) / 10;
+
+      // 1. Prioritize IMDb rating from OMDb
+      const imdbId = data.external_ids?.imdb_id || data.imdb_id;
+      let resolvedRating: number | null = null;
+      let resolvedSource: "imdb" | "tmdb" = "imdb";
+      if (imdbId) {
+        resolvedRating = await fetchImdbRating(imdbId);
+      }
+      // 2. Fallback to TMDB vote average
+      if (
+        resolvedRating === null &&
+        typeof data.vote_average === "number" &&
+        data.vote_average > 0
+      ) {
+        resolvedRating = Math.round(data.vote_average * 10) / 10;
+        resolvedSource = "tmdb";
+      }
+      if (resolvedRating !== null && resolvedRating > 0) {
+        tmdbRating = resolvedRating;
+        ratingSource = resolvedSource;
+        getTmdbRatingCache().set(tmdbId, tmdbRating);
       }
 
       if (mediaType === "tv") {
-        numberOfSeasons = typeof data.number_of_seasons === "number" ? data.number_of_seasons : undefined;
-        numberOfEpisodes = typeof data.number_of_episodes === "number" ? data.number_of_episodes : undefined;
+        numberOfSeasons =
+          typeof data.number_of_seasons === "number"
+            ? data.number_of_seasons
+            : undefined;
+        numberOfEpisodes =
+          typeof data.number_of_episodes === "number"
+            ? data.number_of_episodes
+            : undefined;
         seriesStatus = data.status || undefined;
 
         if (data.last_episode_to_air) {
@@ -1109,7 +1473,11 @@ export async function getMediaDetailAction(
   if (mediaType === "tv") {
     seasons = await fetchTvSeasonsAction(tmdbId);
     if (!seasons || seasons.length === 0) {
-      seasons = buildDefaultSeasonsForTv(tmdbId, store.userEpisodes, numberOfSeasons || 2);
+      seasons = buildDefaultSeasonsForTv(
+        tmdbId,
+        store.userEpisodes,
+        numberOfSeasons || 2,
+      );
     }
   }
 
@@ -1146,6 +1514,7 @@ export async function getMediaDetailAction(
     rating: userRating,
     updated_at: updatedAt,
     tmdb_rating: tmdbRating,
+    rating_source: ratingSource,
     number_of_seasons: numberOfSeasons,
     number_of_episodes: numberOfEpisodes,
     series_status: seriesStatus,
@@ -1168,7 +1537,7 @@ export async function getMediaDetailAction(
 async function fetchTmdbRecommendationsWithFallback(
   type: MediaType,
   tmdbId: number,
-  page: number = 1
+  page: number = 1,
 ): Promise<RawTmdbRecommendation[]> {
   const collected: RawTmdbRecommendation[] = [];
   const seenIds = new Set<number>();
@@ -1187,9 +1556,7 @@ async function fetchTmdbRecommendationsWithFallback(
 
     if (recRes.ok) {
       const recJson = (await recRes.json()) as {
-        results?: Array<
-          TmdbRawResult & { genre_ids?: number[] }
-        >;
+        results?: Array<TmdbRawResult & { genre_ids?: number[] }>;
       };
 
       for (const item of recJson.results ?? []) {
@@ -1226,9 +1593,7 @@ async function fetchTmdbRecommendationsWithFallback(
 
       if (simRes.ok) {
         const simJson = (await simRes.json()) as {
-          results?: Array<
-            TmdbRawResult & { genre_ids?: number[] }
-          >;
+          results?: Array<TmdbRawResult & { genre_ids?: number[] }>;
         };
 
         for (const item of simJson.results ?? []) {
@@ -1263,7 +1628,7 @@ async function fetchTmdbRecommendationsWithFallback(
  */
 async function resolveSeedTitle(
   tmdbId: number,
-  type: MediaType
+  type: MediaType,
 ): Promise<string> {
   const store = getWireframeStore();
   const cached = store.media.get(tmdbId);
@@ -1279,7 +1644,11 @@ async function resolveSeedTitle(
     });
     if (res.ok) {
       const data = (await res.json()) as { title?: string; name?: string };
-      return data.title || data.name || `${type === "movie" ? "Movie" : "TV Show"} #${tmdbId}`;
+      return (
+        data.title ||
+        data.name ||
+        `${type === "movie" ? "Movie" : "TV Show"} #${tmdbId}`
+      );
     }
   } catch {
     // network fallback
@@ -1288,7 +1657,10 @@ async function resolveSeedTitle(
   return `${type === "movie" ? "Movie" : "TV Show"} #${tmdbId}`;
 }
 
-function matchesEra(dateStr: string | null | undefined, eraKey?: string): boolean {
+function matchesEra(
+  dateStr: string | null | undefined,
+  eraKey?: string,
+): boolean {
   if (!eraKey || eraKey === "all") return true;
   if (!dateStr) return false;
   const year = parseInt(dateStr.slice(0, 4), 10);
@@ -1299,6 +1671,12 @@ function matchesEra(dateStr: string | null | undefined, eraKey?: string): boolea
   if (eraDef.startYear !== undefined && eraDef.endYear !== undefined) {
     return year >= eraDef.startYear && year <= eraDef.endYear;
   }
+  if (eraDef.startYear !== undefined) {
+    return year >= eraDef.startYear;
+  }
+  if (eraDef.endYear !== undefined) {
+    return year <= eraDef.endYear;
+  }
   return true;
 }
 
@@ -1306,26 +1684,41 @@ async function fetchTmdbDiscoverFallback(
   type: MediaType,
   eraKey: string,
   genreId?: number | null,
-  page = 1
+  page = 1,
+  includeAdult = false,
+  englishOnly = false,
 ): Promise<DiscoveredFallbackItem[]> {
   const eraDef = DISCOVERY_ERAS.find((e) => e.key === eraKey);
   const queryParams: Record<string, string> = {
     language: "en-US",
-    sort_by: "popularity.desc",
+    include_adult: includeAdult ? "true" : "false",
+    sort_by: "vote_average.desc",
+    "vote_count.gte": type === "movie" ? "100" : "40",
     page: String(page),
   };
+
+  if (englishOnly) {
+    queryParams.with_original_language = "en";
+  }
 
   if (genreId) {
     queryParams.with_genres = String(genreId);
   }
 
-  if (eraDef && eraDef.startYear !== undefined && eraDef.endYear !== undefined) {
-    if (type === "movie") {
-      queryParams["primary_release_date.gte"] = `${eraDef.startYear}-01-01`;
-      queryParams["primary_release_date.lte"] = `${eraDef.endYear}-12-31`;
-    } else {
-      queryParams["first_air_date.gte"] = `${eraDef.startYear}-01-01`;
-      queryParams["first_air_date.lte"] = `${eraDef.endYear}-12-31`;
+  if (eraDef) {
+    if (eraDef.startYear !== undefined) {
+      if (type === "movie") {
+        queryParams["primary_release_date.gte"] = `${eraDef.startYear}-01-01`;
+      } else {
+        queryParams["first_air_date.gte"] = `${eraDef.startYear}-01-01`;
+      }
+    }
+    if (eraDef.endYear !== undefined) {
+      if (type === "movie") {
+        queryParams["primary_release_date.lte"] = `${eraDef.endYear}-12-31`;
+      } else {
+        queryParams["first_air_date.lte"] = `${eraDef.endYear}-12-31`;
+      }
     }
   }
 
@@ -1344,9 +1737,10 @@ async function fetchTmdbDiscoverFallback(
         poster_path: item.poster_path ?? null,
         release_date: item.release_date || item.first_air_date || null,
         overview: item.overview ?? null,
-        genre_ids: (item as unknown as { genre_ids?: number[] }).genre_ids ?? [],
+        genre_ids:
+          (item as unknown as { genre_ids?: number[] }).genre_ids ?? [],
         tmdb_rating:
-          typeof item.vote_average === "number"
+          typeof item.vote_average === "number" && item.vote_average > 0
             ? Math.round(item.vote_average * 10) / 10
             : null,
       }));
@@ -1361,7 +1755,7 @@ async function fetchTmdbDiscoverFallback(
 /**
  * Deliverable 2: What to Watch Next server-side Discovery Engine.
  * Supports WHAT MOVIE TO WATCH NEXT and WHAT TV SHOW TO WATCH NEXT.
- * Handles Era/Decade filtering and URL vs Auto-Pilot seeds.
+ * Ranked and filtered based on TMDB Rating, Era/Decade, and Genre.
  */
 export async function getDiscoveryRecommendationsAction(params: {
   mediaType?: MediaType;
@@ -1374,14 +1768,17 @@ export async function getDiscoveryRecommendationsAction(params: {
   currentSeedId?: number;
 }): Promise<DiscoveryEngineResult> {
   const store = getWireframeStore();
-  const { supabase, user } = await getAuthenticatedUser();
   const activeType: MediaType = params.mediaType || params.seedType || "movie";
   const activeEra: string = params.eraKey || "all";
   const genreKey: string = params.genreKey || "all";
   const page = params.page && params.page > 0 ? params.page : 1;
 
+  const cookieStore = await cookies();
+  const includeAdult = cookieStore.get("kura_adult")?.value === "true";
+  const englishOnly = cookieStore.get("kura_english_only")?.value === "true";
+
   // --------------------------------------------------------------------------
-  // STEP 1: Find Active Seed (URL Seed vs Auto-Pilot)
+  // STEP 1: Active Seed (URL Seed from 'FIND SIMILAR', or null for General Discovery)
   // --------------------------------------------------------------------------
   let seedId: number | null = null;
   let isUrlSeed = false;
@@ -1391,109 +1788,29 @@ export async function getDiscoveryRecommendationsAction(params: {
     isUrlSeed = true;
   }
 
-  // If not seeded via URL, pick from user's rated library (preferring 8+, falling back to any rated item)
-  if (!seedId) {
-    const highRatedCandidates: number[] = [];
-
-    if (supabase && user) {
-      try {
-        const { data: rows } = await supabase
-          .from("user_media")
-          .select("tmdb_id, rating, media:tmdb_id (media_type)")
-          .eq("user_id", user.id)
-          .not("rating", "is", null)
-          .order("rating", { ascending: false });
-
-        if (rows) {
-          const eightsAndAbove: number[] = [];
-          const allRated: number[] = [];
-
-          for (const row of rows) {
-            const mediaObj = Array.isArray(row.media) ? row.media[0] : row.media;
-            const rowMediaType = mediaObj?.media_type as MediaType | undefined;
-            if (rowMediaType === activeType) {
-              const tmdbIdNum = Number(row.tmdb_id);
-              allRated.push(tmdbIdNum);
-              if (Number(row.rating) >= 8) {
-                eightsAndAbove.push(tmdbIdNum);
-              }
-            }
-          }
-
-          if (eightsAndAbove.length > 0) {
-            highRatedCandidates.push(...eightsAndAbove);
-          } else if (allRated.length > 0) {
-            highRatedCandidates.push(...allRated);
-          }
-        }
-      } catch {
-        // fallback
-      }
-    }
-
-    if (highRatedCandidates.length === 0) {
-      const eights: number[] = [];
-      const allRated: number[] = [];
-      for (const [id, userRecord] of store.userMedia.entries()) {
-        if (userRecord.rating !== null && userRecord.rating >= 1) {
-          const mediaRecord = store.media.get(id);
-          if (mediaRecord?.media_type === activeType) {
-            allRated.push(id);
-            if (userRecord.rating >= 8) {
-              eights.push(id);
-            }
-          }
-        }
-      }
-      if (eights.length > 0) {
-        highRatedCandidates.push(...eights);
-      } else if (allRated.length > 0) {
-        highRatedCandidates.push(...allRated);
-      }
-    }
-
-    // If user has no rated titles for this media type and didn't provide a manual seed,
-    // do not fabricate fake recommendations. Return standby state prompting them to rate media.
-    if (highRatedCandidates.length === 0) {
-      return {
-        mediaType: activeType,
-        suggestions: [],
-        seed: null,
-        noRatedMedia: true,
-        dataSource: "none",
-      };
-    }
-
-    const pool = highRatedCandidates;
-    const previousId = params.currentSeedId;
-
-    const available =
-      params.shuffle && previousId && pool.length > 1
-        ? pool.filter((id) => id !== previousId)
-        : pool;
-
-    seedId = available[Math.floor(Math.random() * available.length)];
-  }
-
   // --------------------------------------------------------------------------
-  // STEP 2: Fetch Recommendations from TMDB (with Fallback)
+  // STEP 2: Fetch Recommendations from TMDB (or General Discovery if Unseeded)
   // --------------------------------------------------------------------------
-  const [rawRecs, seedTitle] = await Promise.all([
-    fetchTmdbRecommendationsWithFallback(activeType, seedId, page),
-    resolveSeedTitle(seedId, activeType),
+  const [rawRecs, resolvedSeedTitle] = await Promise.all([
+    seedId
+      ? fetchTmdbRecommendationsWithFallback(activeType, seedId, page)
+      : Promise.resolve([]),
+    seedId
+      ? resolveSeedTitle(seedId, activeType)
+      : Promise.resolve(""),
   ]);
 
+  const seedTitle = resolvedSeedTitle;
   const usedTmdb = rawRecs.length > 0;
   const genreDef = DISCOVERY_GENRES.find((g) => g.key === genreKey);
-  const targetGenreId =
-    genreDef
-      ? activeType === "movie"
-        ? genreDef.movieGenreId
-        : genreDef.tvGenreId
-      : null;
+  const targetGenreId = genreDef
+    ? activeType === "movie"
+      ? genreDef.movieGenreId
+      : genreDef.tvGenreId
+    : null;
 
   // Filter recommendations by Genre and Era
-  const seenIds = new Set<number>([seedId]);
+  const seenIds = new Set<number>(seedId ? [seedId] : []);
   const collectedPool: Array<{
     tmdb_id: number;
     title: string;
@@ -1509,10 +1826,15 @@ export async function getDiscoveryRecommendationsAction(params: {
     if (seenIds.has(item.tmdb_id)) continue;
     seenIds.add(item.tmdb_id);
 
-    const genreMatch = targetGenreId ? item.genre_ids.includes(targetGenreId) : true;
+    const genreMatch = targetGenreId
+      ? item.genre_ids.includes(targetGenreId)
+      : true;
     const eraMatch = matchesEra(item.release_date, activeEra);
+    const langMatch = englishOnly
+      ? (item.original_language ?? "en") === "en"
+      : true;
 
-    if (genreMatch && eraMatch) {
+    if (genreMatch && eraMatch && langMatch) {
       collectedPool.push({
         tmdb_id: item.tmdb_id,
         title: item.title,
@@ -1527,14 +1849,16 @@ export async function getDiscoveryRecommendationsAction(params: {
   }
 
   // --------------------------------------------------------------------------
-  // STEP 3: If recommendations are sparse for this Era/Genre, query TMDB Discover
+  // STEP 3: If recommendations are sparse or unseeded, query TMDB Discover by Rating
   // --------------------------------------------------------------------------
-  if (collectedPool.length < 15) {
+  if (collectedPool.length < 20) {
     const discoverResults = await fetchTmdbDiscoverFallback(
       activeType,
       activeEra,
       targetGenreId,
-      page
+      page,
+      includeAdult,
+      englishOnly,
     );
 
     for (const d of discoverResults) {
@@ -1560,7 +1884,9 @@ export async function getDiscoveryRecommendationsAction(params: {
   if (collectedPool.length < 10) {
     const fallbackItems = Array.from(store.media.values())
       .filter((m) => m.media_type === activeType && m.tmdb_id !== seedId)
-      .filter((m) => (targetGenreId ? (m.genre_ids ?? []).includes(targetGenreId) : true))
+      .filter((m) =>
+        targetGenreId ? (m.genre_ids ?? []).includes(targetGenreId) : true,
+      )
       .filter((m) => matchesEra(m.release_date, activeEra))
       .map((m) => ({
         tmdb_id: m.tmdb_id,
@@ -1581,11 +1907,23 @@ export async function getDiscoveryRecommendationsAction(params: {
     }
   }
 
+  // --------------------------------------------------------------------------
+  // STEP 5: Sort recommendations strictly based on TMDB Rating (Highest First)
+  // --------------------------------------------------------------------------
+  collectedPool.sort((a, b) => {
+    const ratingA = a.tmdb_rating ?? 0;
+    const ratingB = b.tmdb_rating ?? 0;
+    if (ratingA !== ratingB) {
+      return ratingB - ratingA;
+    }
+    return (b.release_date || "").localeCompare(a.release_date || "");
+  });
+
   // Limit to 20 items for a generous 4-row grid
   const finalCandidates = collectedPool.slice(0, 20);
 
   // --------------------------------------------------------------------------
-  // STEP 5: Cross-reference with user library (Supabase or Store)
+  // STEP 6: Cross-reference with user library (Supabase or Store)
   // --------------------------------------------------------------------------
   const allTmdbIds = finalCandidates.map((c) => c.tmdb_id);
   const { lookup: userMediaLookup } = await getUserMediaLookup(allTmdbIds);
@@ -1604,26 +1942,66 @@ export async function getDiscoveryRecommendationsAction(params: {
       updated_at: matched?.updated_at ?? null,
       genre_ids: raw.genre_ids,
       tmdb_rating: raw.tmdb_rating ?? null,
+      rating_source: matched?.status ? "imdb" : "tmdb",
       seasons:
         activeType === "tv"
-          ? buildDefaultSeasonsForTv(raw.tmdb_id, store.userEpisodes)
+          ? (store.seasonsByMedia.get(raw.tmdb_id) ?? undefined)
           : undefined,
     };
   });
 
-  const seedInfo: DiscoverySeedInfo = {
-    id: seedId,
-    title: seedTitle,
-    media_type: activeType,
-    isUrlSeed,
-  };
+  const seedInfo: DiscoverySeedInfo | null = seedId
+    ? {
+        id: seedId,
+        title: seedTitle,
+        media_type: activeType,
+        isUrlSeed,
+      }
+    : null;
 
   return {
     mediaType: activeType,
     suggestions,
     seed: seedInfo,
-    dataSource: usedTmdb ? "tmdb" : "wireframe-store",
+    dataSource: usedTmdb || finalCandidates.length > 0 ? "tmdb" : "wireframe-store",
   };
 }
 
+/**
+ * Reads user search & discovery preferences stored in cookies.
+ */
+export async function getUserPreferencesAction(): Promise<{
+  includeAdult: boolean;
+  englishOnly: boolean;
+}> {
+  const cookieStore = await cookies();
+  const includeAdult = cookieStore.get("kura_adult")?.value === "true";
+  const englishOnly = cookieStore.get("kura_english_only")?.value === "true";
+  return { includeAdult, englishOnly };
+}
 
+/**
+ * Updates user search & discovery preferences in persistent cookies and revalidates paths.
+ */
+export async function setUserPreferenceAction(pref: {
+  includeAdult?: boolean;
+  englishOnly?: boolean;
+}): Promise<void> {
+  const cookieStore = await cookies();
+  if (pref.includeAdult !== undefined) {
+    cookieStore.set("kura_adult", String(pref.includeAdult), {
+      path: "/",
+      maxAge: 31536000,
+    });
+  }
+  if (pref.englishOnly !== undefined) {
+    cookieStore.set("kura_english_only", String(pref.englishOnly), {
+      path: "/",
+      maxAge: 31536000,
+    });
+  }
+  revalidatePath("/discover");
+  revalidatePath("/search");
+  revalidatePath("/calendar");
+  revalidatePath("/");
+}

@@ -1,7 +1,7 @@
-import React, { Suspense } from "react";
-import type { Metadata } from "next";
-import { Inter, IBM_Plex_Mono } from "next/font/google";
 import AppHeader from "@/components/AppHeader";
+import type { Metadata } from "next";
+import { IBM_Plex_Mono, Inter } from "next/font/google";
+import React, { Suspense } from "react";
 import "./globals.css";
 
 const inter = Inter({
@@ -28,18 +28,15 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html
-      lang="en"
-      className={`${inter.variable} ${ibmPlexMono.variable}`}
-    >
+    <html lang="en" className={`${inter.variable} ${ibmPlexMono.variable}`}>
       <body
-        className={`${inter.variable} ${ibmPlexMono.variable} min-h-screen bg-[#F4F3F0] text-zinc-800 font-sans antialiased flex flex-col`}
+        className={`${inter.variable} ${ibmPlexMono.variable} flex min-h-screen flex-col bg-canvas font-sans text-zinc-800 antialiased`}
       >
         <Suspense fallback={null}>
           <AppHeader />
         </Suspense>
 
-        <main className="flex-1 p-3 sm:p-4 md:p-6 min-w-0 overflow-x-hidden">
+        <main className="min-w-0 flex-1 overflow-x-hidden p-3 sm:p-4 md:p-6">
           {children}
         </main>
       </body>

@@ -1,0 +1,32 @@
+{
+  "editor.formatOnSave": true,
+  "editor.defaultFormatter": "esbenp.prettier-vscode",
+  "editor.codeActionsOnSave": {
+    "source.fixAll.eslint": "explicit",
+    "source.organizeImports": "explicit"
+  },
+  // Enable Emmet in React TSX files
+  "emmet.includeLanguages": {
+    "javascript": "javascriptreact",
+    "typescript": "typescriptreact"
+  },
+  // Tailwind CSS v4 support
+  "tailwindCSS.experimental.classRegex": [
+    ["cva\\(([^)]*)\\)", "[\"'`]([^\"'`]*).*?[\"'`]"],
+    ["cx\\(([^)]*)\\)", "(?:'|\"|`)([^']*)(?:'|\"|`)"],
+    ["cn\\(([^)]*)\\)", "(?:'|\"|`)([^']*)(?:'|\"|`)"]
+  ],
+  "tailwindCSS.includeLanguages": {
+    "typescript": "javascript",
+    "typescriptreact": "html"
+  },
+  // TypeScript speed & workspace version
+  "typescript.tsdk": "node_modules/typescript/lib",
+  "typescript.suggest.completeFunctionCalls": true,
+  // File nesting for Next.js clean tree
+  "explorer.fileNesting.enabled": true,
+  "explorer.fileNesting.patterns": {
+    "page.tsx": "layout.tsx, loading.tsx, error.tsx, not-found.tsx, *.module.css",
+    "package.json": "package-lock.json, tsconfig.json, next.config.*, tailwind.config.*, postcss.config.*, eslint.config.*"
+  }
+}

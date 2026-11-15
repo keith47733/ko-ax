@@ -1,0 +1,34 @@
+{
+  "Next.js Client Component": {
+    "prefix": "ncc",
+    "body": [
+      "'use client';",
+      "",
+      "import React from 'react';",
+      "",
+      "interface ${TM_FILENAME_BASE}Props {",
+      "  $1",
+      "}",
+      "",
+      "export default function ${TM_FILENAME_BASE}({ $2 }: ${TM_FILENAME_BASE}Props) {",
+      "  return (",
+      "    <div>",
+      "      $0",
+      "    </div>",
+      "  );",
+      "}",
+    ],
+    "description": "Create a Next.js Client Component",
+  },
+  "Next.js Server Action": {
+    "prefix": "nsa",
+    "body": [
+      "'use server';",
+      "",
+      "export async function ${1:actionName}(formData: FormData) {",
+      "  $0",
+      "}",
+    ],
+    "description": "Create a Next.js Server Action",
+  },
+}
